@@ -1,5 +1,5 @@
 <a id="top"></a>
-# RON Cheat Menu · V1.20.11
+# RON Cheat Menu
 
 **BY ASWAVE · Ready or Not · Windows x64 · C++ / WPF**
 
@@ -21,7 +21,7 @@ Ready or Not 的原生 C++ 功能模块与 C# WPF 菜单项目。菜单程序集
 
 | 模块 | 当前实现 |
 | --- | --- |
-| 菜单 | 中英文界面、主题、按键绑定、配置预设、地图与连接状态、模型预览、V1.20.11 版本标签 |
+| 菜单 | 中英文界面、主题、按键绑定、配置预设、地图与连接状态、模型预览 |
 | 角色透视 | 玩家、嫌疑人、平民、AI 队友、小队及伤员分类；方框、名字、生命值、骨骼、射线、距离与颜色设置，部分分类支持尸体标记 |
 | 证物与武器 | 独立证物、可收取的掉落枪械、已收取证物袋；“显示武器”统一控制武器及其他物品，避免重复枪械标记 |
 | 场景显示 | 陷阱与任务目标；门透视、可加固物透视入口已移除 |
@@ -131,7 +131,7 @@ This overview reflects the source. An execution path does not establish compatib
 
 | Module | Current implementation |
 | --- | --- |
-| Menu | Chinese/English UI, themes, key bindings, profiles, map/connection status, model preview and V1.20.11 label |
+| Menu | Chinese/English UI, themes, key bindings, profiles, map/connection status and model preview |
 | Character ESP | Player, suspect, civilian, AI teammate, squad and wounded categories; boxes, names, health, skeletons, rays, distance/colors and selected corpse categories |
 | Evidence and weapons | Evidence actors, collectible dropped firearms and collected evidence bags; one Show Weapons control covers weapons and other items, avoiding duplicate firearm markers |
 | World visuals | Traps and mission objectives; door/securable ESP controls removed |

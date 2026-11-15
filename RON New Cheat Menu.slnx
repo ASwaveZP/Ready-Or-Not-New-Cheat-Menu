@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/Menu/">
+    <Project Path="Menu/RonMenu.csproj" />
+  </Folder>
+</Solution>

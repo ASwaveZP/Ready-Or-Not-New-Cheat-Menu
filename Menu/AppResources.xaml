@@ -1,0 +1,283 @@
+<ResourceDictionary
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             >
+    <Color x:Key="BgColor">#F20A121A</Color>
+    <Color x:Key="PanelColor">#E90D1B23</Color>
+    <Color x:Key="PanelRaisedColor">#EB142831</Color>
+    <Color x:Key="AccentColor">#35D8C4</Color>
+    <Color x:Key="AccentAltColor">#4AA8FF</Color>
+    <Color x:Key="SidebarColor">#F20B171E</Color>
+    <Color x:Key="LineColor">#285366</Color>
+    <Color x:Key="HoverColor">#20363C</Color>
+    <Color x:Key="ActiveColor">#17383B</Color>
+    <Color x:Key="TrackColor">#343B3B</Color>
+    <Color x:Key="DividerColor">#2B3131</Color>
+    <Color x:Key="MetaColor">#74949A</Color>
+    <Color x:Key="SubtleColor">#626C69</Color>
+    <Color x:Key="TextColor">#F3F5F4</Color>
+    <Color x:Key="MutedColor">#89928F</Color>
+    <!-- Every brush below is referenced with DynamicResource only, and the theme
+         picker *replaces* them instead of recolouring them: WPF freezes a brush as
+         soon as a Style setter that references it is sealed, and assigning Color on
+         a frozen brush throws (that crashed the menu, and the host process with it,
+         as soon as a theme was selected). Replacing the dictionary entry repaints
+         all consumers, sealed styles and templates included.
+
+         The list is deliberately exhaustive: the whole surface (window, sidebar,
+         borders, hover states, glow orbs and scan line) is themed, so switching a
+         theme repaints the entire menu instead of only the accent-tinted controls. -->
+    <SolidColorBrush x:Key="BgBrush" Color="{StaticResource BgColor}" />
+    <SolidColorBrush x:Key="PanelBrush" Color="{StaticResource PanelColor}" />
+    <SolidColorBrush x:Key="RaisedBrush" Color="{StaticResource PanelRaisedColor}" />
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />
+    <SolidColorBrush x:Key="AccentAltBrush" Color="{StaticResource AccentAltColor}" />
+    <SolidColorBrush x:Key="SidebarBrush" Color="{StaticResource SidebarColor}" />
+    <SolidColorBrush x:Key="LineBrush" Color="{StaticResource LineColor}" />
+    <SolidColorBrush x:Key="HoverBrush" Color="{StaticResource HoverColor}" />
+    <SolidColorBrush x:Key="ActiveBrush" Color="{StaticResource ActiveColor}" />
+    <SolidColorBrush x:Key="TrackBrush" Color="{StaticResource TrackColor}" />
+    <SolidColorBrush x:Key="DividerBrush" Color="{StaticResource DividerColor}" />
+    <SolidColorBrush x:Key="MetaBrush" Color="{StaticResource MetaColor}" />
+    <SolidColorBrush x:Key="SubtleBrush" Color="{StaticResource SubtleColor}" />
+    <SolidColorBrush x:Key="TextBrush" Color="{StaticResource TextColor}" />
+    <SolidColorBrush x:Key="MutedBrush" Color="{StaticResource MutedColor}" />
+
+    <!-- Soft background glows. A radial gradient that fades to fully transparent
+         looks identical to a blurred ellipse, but costs a fraction of the CPU:
+         the menu is a layered (AllowsTransparency) window, so every frame is
+         composited in software and a BlurEffect over a 330 px ellipse was by far
+         the most expensive thing on screen. -->
+    <RadialGradientBrush x:Key="GlowBrush">
+      <GradientStop Color="#9A35D8C4" Offset="0" />
+      <GradientStop Color="#5535D8C4" Offset="0.48" />
+      <GradientStop Color="#0035D8C4" Offset="1" />
+    </RadialGradientBrush>
+    <RadialGradientBrush x:Key="GlowAltBrush">
+      <GradientStop Color="#884AA8FF" Offset="0" />
+      <GradientStop Color="#334AA8FF" Offset="0.5" />
+      <GradientStop Color="#004AA8FF" Offset="1" />
+    </RadialGradientBrush>
+    <LinearGradientBrush x:Key="ScanBrush" StartPoint="0,0" EndPoint="1,0">
+      <GradientStop Color="#0035D8C4" Offset="0" />
+      <GradientStop Color="#AA35D8C4" Offset="0.5" />
+      <GradientStop Color="#004AA8FF" Offset="1" />
+    </LinearGradientBrush>
+
+    <!-- Slim themed slider: the stock one is a light system control that clashed
+         with the dark panel. The filled part of the track uses the accent. -->
+    <Style TargetType="{x:Type Slider}">
+      <Setter Property="Height" Value="20" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="{x:Type Slider}">
+            <Grid Background="Transparent">
+              <Border Height="4" CornerRadius="2" Background="{DynamicResource TrackBrush}" VerticalAlignment="Center" />
+              <Track x:Name="PART_Track">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
+                    <RepeatButton.Template>
+                      <ControlTemplate TargetType="RepeatButton">
+                        <Border Height="4" CornerRadius="2" Background="{DynamicResource AccentBrush}" VerticalAlignment="Center" Opacity="0.85" />
+                      </ControlTemplate>
+                    </RepeatButton.Template>
+                  </RepeatButton>
+                </Track.DecreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb Width="12" Height="12" VerticalAlignment="Center">
+                    <Thumb.Template>
+                      <ControlTemplate TargetType="Thumb">
+                        <Grid Width="12" Height="12">
+                          <Ellipse x:Name="Dot" Fill="{DynamicResource AccentBrush}" />
+                          <Ellipse Stroke="#FFFFFF" StrokeThickness="1" Opacity="0.25" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Dot" Property="Opacity" Value="0.8" /></Trigger>
+                        </ControlTemplate.Triggers>
+                      </ControlTemplate>
+                    </Thumb.Template>
+                  </Thumb>
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton Command="Slider.IncreaseLarge" Focusable="False">
+                    <RepeatButton.Template>
+                      <ControlTemplate TargetType="RepeatButton"><Border Background="Transparent" /></ControlTemplate>
+                    </RepeatButton.Template>
+                  </RepeatButton>
+                </Track.IncreaseRepeatButton>
+              </Track>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Slim themed scrollbar. The stock WPF one is a light grey system control
+         and stood out badly against the dark panel. -->
+    <Style TargetType="{x:Type ScrollBar}">
+      <Setter Property="Width" Value="6" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="{x:Type ScrollBar}">
+            <Grid Background="Transparent">
+              <Track x:Name="PART_Track" IsDirectionReversed="True">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton Command="ScrollBar.PageUpCommand" Focusable="False" Opacity="0" />
+                </Track.DecreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb MinHeight="28">
+                    <Thumb.Template>
+                      <ControlTemplate TargetType="{x:Type Thumb}">
+                        <Border x:Name="Grip" Background="{DynamicResource AccentBrush}" CornerRadius="3" Opacity="0.45" />
+                        <ControlTemplate.Triggers>
+                          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Grip" Property="Opacity" Value="0.85" /></Trigger>
+                          <Trigger Property="IsDragging" Value="True"><Setter TargetName="Grip" Property="Opacity" Value="1" /></Trigger>
+                        </ControlTemplate.Triggers>
+                      </ControlTemplate>
+                    </Thumb.Template>
+                  </Thumb>
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton Command="ScrollBar.PageDownCommand" Focusable="False" Opacity="0" />
+                </Track.IncreaseRepeatButton>
+              </Track>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style.Triggers>
+        <Trigger Property="Orientation" Value="Horizontal">
+          <Setter Property="Width" Value="Auto" />
+          <Setter Property="Height" Value="6" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
+    <Style TargetType="{x:Type ComboBox}">
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="Background" Value="{DynamicResource BgBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+      <Setter Property="FontFamily" Value="宋体" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="ItemContainerStyle">
+        <Setter.Value>
+          <Style TargetType="{x:Type ComboBoxItem}">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource BgBrush}" />
+            <Setter Property="Padding" Value="9,6" />
+            <Setter Property="Template">
+              <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ComboBoxItem}">
+                  <Border x:Name="ItemShell" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                    <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" />
+                  </Border>
+                  <ControlTemplate.Triggers>
+                    <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemShell" Property="Background" Value="{DynamicResource HoverBrush}" /></Trigger>
+                    <Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemShell" Property="Background" Value="{DynamicResource ActiveBrush}" /></Trigger>
+                    <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.55" /></Trigger>
+                  </ControlTemplate.Triggers>
+                </ControlTemplate>
+              </Setter.Value>
+            </Setter>
+          </Style>
+        </Setter.Value>
+      </Setter>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="{x:Type ComboBox}">
+            <Grid>
+              <Border x:Name="ComboShell" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" />
+              <ContentPresenter x:Name="SelectionText" Margin="10,0,34,0" VerticalAlignment="Center" HorizontalAlignment="Left" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}" TextElement.Foreground="{TemplateBinding Foreground}" />
+              <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" Background="Transparent" BorderThickness="0" HorizontalAlignment="Right" Width="30">
+                <Path Data="M 0 0 L 4 4 L 8 0 Z" Fill="{DynamicResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </ToggleButton>
+              <Popup x:Name="PART_Popup" Placement="Bottom" PlacementTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                <Border MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1" CornerRadius="6" Padding="3">
+                  <ScrollViewer MaxHeight="300" CanContentScroll="True"><ItemsPresenter /></ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ComboShell" Property="BorderBrush" Value="{DynamicResource AccentBrush}" /></Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.55" /></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="FontFamily" Value="宋体" />
+    </Style>
+    <Style TargetType="ToolTip">
+      <Setter Property="Background" Value="{DynamicResource BgBrush}" />
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="9,6" />
+      <Setter Property="FontFamily" Value="宋体" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ToolTip">
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+              <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" />
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="Button" x:Key="NavButton">
+      <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="14,11" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Shell" Background="{TemplateBinding Background}" CornerRadius="9" Padding="{TemplateBinding Padding}">
+              <ContentPresenter />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Shell" Property="Background" Value="{DynamicResource HoverBrush}"/><Setter Property="Foreground" Value="{StaticResource TextBrush}"/></Trigger>
+              <Trigger Property="Tag" Value="Active"><Setter TargetName="Shell" Property="Background" Value="{DynamicResource ActiveBrush}"/><Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="CheckBox">
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="Margin" Value="0,7" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Grid Width="40" Height="24" Background="Transparent">
+              <Border x:Name="Track" Width="38" Height="22" CornerRadius="11" HorizontalAlignment="Center" VerticalAlignment="Center" Background="{DynamicResource TrackBrush}" />
+              <Ellipse x:Name="Thumb" Width="16" Height="16" Fill="#F3F5F4" HorizontalAlignment="Left" Margin="3,0,0,0" VerticalAlignment="Center">
+                <Ellipse.RenderTransform><TranslateTransform X="0"/></Ellipse.RenderTransform>
+              </Ellipse>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                <Trigger.EnterActions>
+                  <BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" To="16" Duration="0:0:0.16"/></Storyboard></BeginStoryboard>
+                </Trigger.EnterActions>
+                <Trigger.ExitActions>
+                  <BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" To="0" Duration="0:0:0.16"/></Storyboard></BeginStoryboard>
+                </Trigger.ExitActions>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Track" Property="Opacity" Value="0.45"/><Setter TargetName="Thumb" Property="Opacity" Value="0.6"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </ResourceDictionary>

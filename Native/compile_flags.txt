@@ -1,0 +1,17 @@
+-I.
+-I./Libraries/ImGui
+-I./Libraries/glew/include
+-I./Libraries/detours
+-I./ReadyornotSDK
+-I./OHook
+-I./OHook/Core
+-I./OHook/Features
+-I./OHook/Handlers
+-I./OHook/ObjectArray
+-I./OHook/Overlays
+-I./OHook/Misc
+-I./console
+-I./Libraries/RendererHook
+-I./Libraries/jsoncpp/include
+-xc++
+-std=c++20

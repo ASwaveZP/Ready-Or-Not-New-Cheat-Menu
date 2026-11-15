@@ -1,7 +1,7 @@
 <a id="top"></a>
 # RON Cheat Menu
 
-**BY ASWAVE · Ready or Not · Windows x64 · C++ / WPF**
+**Ready or Not · Windows x64 · C++ / WPF**
 
 [简体中文](#zh-cn) | [English](#en)
 
@@ -10,31 +10,29 @@
 
 [Switch to English](#en)
 
-Ready or Not 的原生 C++ 功能模块与 C# WPF 菜单项目。菜单程序集和模型资源嵌入 `OHook.dll`，由原生模块托管 .NET Framework CLR 启动。原生 ImGui 负责游戏内透视与 HUD，WPF 负责设置界面；构建产物为一个 DLL。
+这是我为 Ready or Not 整理和改进的功能菜单。我把设置界面放到了 WPF 中，游戏内的透视和 HUD 仍由原生模块绘制。菜单、模型和功能模块打包在一个 `OHook.dll` 里，支持中英文切换、主题和按键设置。
 
 [功能](#zh-features) · [构建](#zh-build) · [使用与配置](#zh-use) · [项目结构](#zh-structure) · [限制与排查](#zh-limitations) · [许可证](#zh-license)
 
 <a id="zh-features"></a>
-### 功能与实现状态
+### 功能
 
-以下内容根据当前源码整理；存在执行路径不代表已在所有游戏版本和联机模式中验证。
-
-| 模块 | 当前实现 |
+| 模块 | 功能 |
 | --- | --- |
 | 菜单 | 中英文界面、主题、按键绑定、配置预设、地图与连接状态、模型预览 |
 | 角色透视 | 玩家、嫌疑人、平民、AI 队友、小队及伤员分类；方框、名字、生命值、骨骼、射线、距离与颜色设置，部分分类支持尸体标记 |
 | 证物与武器 | 独立证物、可收取的掉落枪械、已收取证物袋；“显示武器”统一控制武器及其他物品，避免重复枪械标记 |
-| 场景显示 | 陷阱与任务目标；门透视、可加固物透视入口已移除 |
-| 自瞄 | 目标骨骼、视线检查、范围、平滑与按键设置；实时读取骨骼位置，移除随距离抬高头部的固定偏差 |
+| 场景显示 | 陷阱与任务目标 |
+| 自瞄 | 目标骨骼、视线检查、范围、平滑与按键设置；随距离和姿态变化跟踪所选骨骼部位 |
 | 武器 | 无限弹药、弹匣补充、自定义射速、自动射击模式、一击必杀、准星射击方向及武器效果调整 |
 | 玩家 | 无敌、移动速度、玩家穿墙、视野调整 |
 | 世界交互 | 嫌疑人行为控制、解除武装、投降/服从、陷阱禁用、证物收集及传送相关操作 |
 
-**实验性子弹穿墙：** 仅在本地玩家拥有权威权限的单人/主机场景生效，仅处理 `bHitScan` 武器。代码拦截 `Multicast_PerformHitscan`，沿实际射击方向单独检测缓存中的嫌疑人模型，将最近的命中提交给点伤害接口；墙体不参与这次检测。已处理的射线事件跳过原生射线分支。它不覆盖实体弹丸，也不会在任意方向自动命中；目标必须已加载并进入缓存，伤害仍经过游戏伤害处理。入口触发、护甲、命中反馈及联机表现仍需游戏内验证。
+**子弹穿墙仍在调试。** 目前只支持单人或主机，以及使用射线判定的武器。开启后沿射击方向直接检测嫌疑人，忽略中间墙体；需要瞄准目标，目标也必须已经加载。实体弹丸暂不支持，护甲、命中反馈和联机效果还需要继续测试。
 
-**尚未接通的菜单选项：** 静默瞄准、瞬间换弹、防闪光、无重量、无硬直、解锁全部物品等开关存在于配置与菜单，但本次源码检查未找到相应的功能执行路径，请勿将其视为已完成能力。
+**尚未完成：** 静默瞄准、瞬间换弹、防闪光、无重量、无硬直、解锁全部物品。这些选项暂时保留在菜单中，功能还没有接通。
 
-**性能调整：** 缓存事件分类，移除全量事件名称记录；在 HUD 帧检查对象缓存，以 0.5 秒间隔扫描；删除嫌疑人/平民重复扫描；缓存自瞄骨骼名称；穿墙判定复用角色缓存；菜单隐藏时停止轮询，防止连接请求重叠。尚无 FPS 或帧时间对比数据。
+针对游戏卡顿，我减少了事件记录和重复对象扫描，给骨骼查找和命中检测加了缓存，菜单隐藏后也会停止连接轮询。具体效果还需要在不同场景下测试，暂时没有帧率对比数据。
 
 <a id="zh-build"></a>
 ### 构建
@@ -52,7 +50,7 @@ cmake -S Native -B Native/build-vs -G "Visual Studio 18 2026" -A x64
 cmake --build Native/build-vs --config Release --target OHook -- /m
 ```
 
-当前工作区使用 Visual Studio 2026 生成器完成 Release 构建。其他工具链需要自行检查 C++23、SDK 和生成器兼容性。找不到 MSBuild 时，在配置命令中追加 `-DMSBUILD_EXECUTABLE="你的完整路径/MSBuild.exe"`。
+我使用 Visual Studio 2026 构建，Release 已通过编译。使用其他工具链时，请确认 C++23、SDK 和 CMake 生成器兼容。找不到 MSBuild 时，在配置命令中追加 `-DMSBUILD_EXECUTABLE="你的完整路径/MSBuild.exe"`。
 
 也可使用根目录 `build.bat`，但其 Visual Studio 路径固定为 `E:\Data\VS\Common7\Tools\VsDevCmd.bat`，需按实际安装位置调整。该脚本还会清理生成的 EXE、PDB 和部分中间产物；手动 CMake 构建不执行这些额外清理。`Native/` 中旧脚本保留作历史参考，推荐使用上述流程。
 
@@ -100,16 +98,16 @@ dist/OHook.dll              构建输出，不提交到 Git
 - **新目标未立即参与判定：** 对象缓存每 0.5 秒刷新；自瞄在执行时重新读取骨骼坐标。
 - **自瞄未选中嫌疑人：** 当前筛选还受嫌疑人透视开关、AI 最大显示距离、范围和视线检查影响。
 - **选项存在但无效果：** 检查上述未接通选项及权威端限制。
-- **验证状态：** 本地 Windows x64 Release 构建通过；尚未完成覆盖全部功能、地图、距离与联机模式的游戏内回归测试。编译通过不等于效果验证通过。
+- **测试进度：** Windows x64 Release 编译通过，游戏内测试还没有覆盖全部功能和地图。遇到异常可以提交 Issue。
 
 反馈时请注明游戏版本、单人/主机/客户端身份、开启的功能和复现步骤。性能问题请尽量附相同场景下加载前后的帧时间或 FPS。
 
 <a id="zh-license"></a>
-### 许可证与来源
+### 许可证与依赖
 
-项目自身代码按作者确认的授权采用 [MIT License](LICENSE)，版权署名 ASwave。`Native` 项目级许可证同步为 MIT。`Native/Libraries/` 内第三方代码保留原有版权和许可声明，不因根许可证而改变。
+项目采用 [MIT License](LICENSE)。第三方依赖沿用各自的许可证，具体声明见 `Native/Libraries/`。
 
-原生模块基于保留在仓库中的 RONFentry 代码基础整合。[Native/README.md](Native/README.md) 是历史上游说明，不代表当前版本功能完成度。第三方依赖包括 Dear ImGui、Microsoft Detours、GLEW、JsonCpp；各自源文件中的声明予以保留。
+原生模块基于 RONFentry 整合，使用了 Dear ImGui、Microsoft Detours、GLEW 和 JsonCpp。旧项目说明保存在 [Native/README.md](Native/README.md)，当前功能以本页为准。
 
 [返回顶部](#top) · [English](#en)
 
@@ -120,31 +118,29 @@ dist/OHook.dll              构建输出，不提交到 Git
 
 [切换到简体中文](#zh-cn)
 
-A Windows x64 Ready or Not project combining native C++ features with a C# WPF menu. The menu assembly and model are embedded in `OHook.dll`; the native module hosts the .NET Framework CLR to start WPF. Native ImGui renders in-game ESP/HUD, while WPF provides settings. The build produces one deliverable DLL.
+This is my reworked feature menu for Ready or Not. I moved the settings interface to WPF while keeping ESP and HUD rendering in the native module. The menu, model and native features are bundled into a single `OHook.dll`, with Chinese/English language support, themes and configurable key bindings.
 
 [Features](#en-features) · [Build](#en-build) · [Usage](#en-use) · [Structure](#en-structure) · [Limitations](#en-limitations) · [License](#en-license)
 
 <a id="en-features"></a>
-### Features and implementation status
+### Features
 
-This overview reflects the source. An execution path does not establish compatibility with every game version or network mode.
-
-| Module | Current implementation |
+| Module | Features |
 | --- | --- |
 | Menu | Chinese/English UI, themes, key bindings, profiles, map/connection status and model preview |
 | Character ESP | Player, suspect, civilian, AI teammate, squad and wounded categories; boxes, names, health, skeletons, rays, distance/colors and selected corpse categories |
 | Evidence and weapons | Evidence actors, collectible dropped firearms and collected evidence bags; one Show Weapons control covers weapons and other items, avoiding duplicate firearm markers |
-| World visuals | Traps and mission objectives; door/securable ESP controls removed |
-| Aim | Bone selection, visibility checks, range, smoothing and key activation; live joint positions without the former distance-based upward head offset |
+| World visuals | Traps and mission objectives |
+| Aim | Bone selection, visibility checks, range, smoothing and key activation; tracking of the selected joint as distance and pose change |
 | Weapons | Infinite ammunition, magazine replenishment, custom fire rate, automatic fire mode, increased damage, crosshair shot direction and weapon-effect adjustments |
 | Player | God mode, movement speed, noclip and FOV adjustment |
 | World actions | Suspect behavior control, disarming, surrender/compliance, trap disabling, evidence collection and teleport actions |
 
-**Experimental wall hits:** restricted to the local player's authoritative single-player/host context and `bHitScan` weapons. The `Multicast_PerformHitscan` interception tests cached suspect meshes along the firing direction and submits the nearest hit through point damage. World geometry is excluded from that query. A handled event skips its original hitscan branch. This does not implement physical projectile penetration or arbitrary-direction hits. Targets must be loaded and cached; game damage processing still applies. Hook coverage, armor, hit feedback and network behavior require in-game validation.
+**Wall hits are still experimental.** They currently support single-player or host sessions and hitscan weapons. The feature checks suspects along the firing direction while ignoring intervening walls. You still need to aim at a loaded target. Physical projectiles are not supported, and armor, hit feedback and network behavior need further testing.
 
-**Exposed but not wired up:** silent aim, instant reload, no flash, no weight, no stagger and unlock-all-items have menu/configuration entries, but no corresponding feature execution paths were found in this source review. They should not be treated as completed features.
+**Not finished yet:** silent aim, instant reload, no flash, no weight, no stagger and unlock-all-items. These controls remain in the menu, but their functionality is not connected yet.
 
-**Performance work:** cached event classification, removal of full event-name recording, HUD-frame cache checks with a 0.5-second scan interval, removal of duplicate suspect/civilian scans, cached aim bone names, actor-cache reuse for wall hits, and suspended/serialized menu polling. No measured FPS or frame-time gain is claimed.
+To address stuttering, I reduced event logging and duplicate actor scans, cached bone lookups and reused actor data for hit detection. Connection polling stops when the menu is hidden. Performance still needs testing across different scenes; I do not have frame-rate comparisons yet.
 
 <a id="en-build"></a>
 ### Build
@@ -162,7 +158,7 @@ cmake -S Native -B Native/build-vs -G "Visual Studio 18 2026" -A x64
 cmake --build Native/build-vs --config Release --target OHook -- /m
 ```
 
-The local Release build used Visual Studio 2026. Other toolchains require their own C++23, SDK and generator checks. If MSBuild is not found, append `-DMSBUILD_EXECUTABLE="your/full/path/MSBuild.exe"` to the configure command.
+I build with Visual Studio 2026, and the Release build compiles successfully. If you use another toolchain, check its C++23, SDK and CMake generator compatibility. If MSBuild is not found, append `-DMSBUILD_EXECUTABLE="your/full/path/MSBuild.exe"` to the configure command.
 
 The root `build.bat` is an alternative, but its Visual Studio path is fixed to `E:\Data\VS\Common7\Tools\VsDevCmd.bat`; adapt it to your installation. It also removes generated EXE/PDB files and selected intermediates. Manual CMake commands do not perform that extra cleanup. Legacy scripts under `Native/` are retained for reference; use the root workflow above.
 
@@ -210,15 +206,15 @@ Build flow: `Menu/RonMenu.csproj` → `RONMenu.UI.dll` → native RCDATA resourc
 - **New targets not considered immediately:** discovery refreshes every 0.5 seconds; aiming refreshes joint positions at execution time.
 - **Aim does not select a suspect:** selection also depends on suspect ESP, maximum AI display distance, targeting range and visibility checks.
 - **Visible settings have no effect:** check the unimplemented entries and authority restrictions above.
-- **Validation:** the local Windows x64 Release build passed. Full in-game regression across features, maps, distances and network modes has not been completed. Build success is not gameplay validation.
+- **Testing:** Windows x64 Release compiles successfully. In-game testing has not covered every feature and map yet. Please open an issue if you run into problems.
 
 For issue reports, include the game version, single-player/host/client role, enabled features and reproduction steps. For performance reports, include frame times or FPS from the same scene before and after loading the menu where possible.
 
 <a id="en-license"></a>
-### License and provenance
+### License and dependencies
 
-The project's own code uses the [MIT License](LICENSE), attributed to ASwave, under the author's stated authorization. The project-level license in `Native/` is also MIT. Third-party code under `Native/Libraries/` retains its existing notices and terms.
+The project uses the [MIT License](LICENSE). Third-party dependencies keep their own licenses; see the notices under `Native/Libraries/`.
 
-The native integration builds on the RONFentry code base retained here. [Native/README.md](Native/README.md) is historical upstream documentation, not a statement of current feature completeness. Dependencies include Dear ImGui, Microsoft Detours, GLEW and JsonCpp; their source notices are preserved.
+The native module builds on RONFentry and uses Dear ImGui, Microsoft Detours, GLEW and JsonCpp. The original project notes are kept in [Native/README.md](Native/README.md); this page describes the current menu.
 
 [Back to top](#top) · [简体中文](#zh-cn)

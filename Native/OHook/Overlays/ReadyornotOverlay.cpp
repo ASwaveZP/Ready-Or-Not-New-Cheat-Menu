@@ -44,7 +44,6 @@ void ReadyornotOverlay::DrawHUD() {
         LocalizationManager::Initialize();
         bConfigLoaded = true;
     }
-    MenuPipe::ApplyPending();
 
     ReadyornotOverlay* Overlay = static_cast<ReadyornotOverlay*>(OverlayBase::Instance);
     WorldFeatures::Func_UpdateCurrentLevel(Overlay);

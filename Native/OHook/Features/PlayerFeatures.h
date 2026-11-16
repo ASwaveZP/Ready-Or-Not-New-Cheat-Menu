@@ -20,5 +20,7 @@ namespace PlayerFeatures {
     void DoForceSuspectSurrender();
     void DoAutoComplySuspects();
     void DoDisableAllTraps();
+    void UpdateTeleportTarget(ReadyornotOverlay* overlay, const SDK::AHUD* hud);
     void DoTeleportToTarget(ReadyornotOverlay* overlay);
+    void DoWorldActionHotkeys();
 }

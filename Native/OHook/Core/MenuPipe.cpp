@@ -3,6 +3,7 @@
 #include "InputOwnership.h"
 #include "LocalizationManager.h"
 #include "../Handlers/ActorCache.h"
+#include "../Features/WorldFeatures.h"
 #include "DetourManager.h"
 #include "../Misc/Utils.h"
 
@@ -61,6 +62,7 @@ namespace {
             { "cfg_AimbotNoSway", &Configuration::cfg_AimbotNoSway },
             { "cfg_InfiniteAmmo", &Configuration::cfg_InfiniteAmmo },
             { "cfg_AutoFire", &Configuration::cfg_AutoFire },
+            { "cfg_TriggerBot", &Configuration::cfg_TriggerBot },
             { "cfg_BulletPenetration", &Configuration::cfg_BulletPenetration },
             { "cfg_OneHitKill", &Configuration::cfg_OneHitKill },
             { "cfg_ForcedCrosshairShot", &Configuration::cfg_ForcedCrosshairShot },
@@ -139,6 +141,7 @@ namespace {
             { "cfg_DrawEvidenceESP", &Configuration::cfg_DrawEvidenceESP },
             { "cfg_DrawCollectedEvidenceESP", &Configuration::cfg_DrawCollectedEvidenceESP },
             { "cfg_DrawItemsESP", &Configuration::cfg_DrawItemsESP },
+            { "cfg_DrawHeldItemsESP", &Configuration::cfg_DrawHeldItemsESP },
             { "cfg_DrawTrapsESP", &Configuration::cfg_DrawTrapsESP },
             { "cfg_ShowDebugClassNames", &Configuration::cfg_ShowDebugClassNames },
             { "cfg_ShowDebugDistance", &Configuration::cfg_ShowDebugDistance },
@@ -391,37 +394,22 @@ namespace MenuPipe {
 
     bool ApplySetting(const std::string& key, const Json::Value& value) {
         if (ActionSettings.contains(key) && value.isBool() && value.asBool()) {
-            auto* controller = GetARONPCForESP();
-            if (!controller || !IsActorValid(controller)) return false;
-            if (key == "action_KillSuspects") controller->KillAllSuspects();
-            else if (key == "action_KillCivilians") controller->KillAllCivilians();
-            else if (key == "action_UnlockDoors") {
-                auto* gameState = UReadyOrNotStatics::GetReadyOrNotGameState();
-                if (!gameState || !IsActorValid(gameState)) return false;
-                for (auto* door : gameState->AllDoors)
-                    if (door && IsActorValid(door)) door->SetLocked(false);
-            }
-            else if (key == "action_CollectEvidence") {
-                auto* world = GetWorld();
-                auto* player = controller->K2_GetPawn();
-                if (!world || !player || !IsActorValid(player)) return false;
-                TArray<AActor*> evidenceActors;
-                UGameplayStatics::GetAllActorsOfClass(reinterpret_cast<UObject*>(world), AEvidenceActor::StaticClass(), &evidenceActors);
-                for (AActor* actor : evidenceActors) {
-                    auto* evidence = reinterpret_cast<AEvidenceActor*>(actor);
-                    if (!evidence || !IsActorValid(evidence) || !evidence->EvidenceComponent || !IsComponentValid(evidence->EvidenceComponent)) continue;
-                    if (evidence->EvidenceComponent->CanBeCollected()) static_cast<AReadyOrNotCharacter*>(player)->PickupEvidence(evidence);
-                }
-            }
-            else if (key == "action_AddMagazine") {
+            if (key == "action_KillSuspects") return WorldFeatures::KillCharactersByTeam(true, false);
+            if (key == "action_KillCivilians") return WorldFeatures::KillCharactersByTeam(false, true);
+            if (key == "action_UnlockDoors") return WorldFeatures::UnlockAllDoors();
+            if (key == "action_CollectEvidence") return WorldFeatures::CollectAllEvidence();
+            if (key == "action_AddMagazine") {
+                auto* controller = GetARONPCForESP();
+                if (!controller || !IsActorValid(controller)) return false;
                 auto* weapon = GetCurrentWeapon();
                 if (!weapon || !IsActorValid(weapon) || !weapon->IsA(ABaseMagazineWeapon::StaticClass())) return false;
                 FMagazine magazine{};
                 magazine.Ammo = static_cast<uint16>(std::clamp(Configuration::cfg_CustomAmmoCount, 1, 999));
                 magazine.AmmoType = 1;
                 static_cast<ABaseMagazineWeapon*>(weapon)->Server_AddMagazine(magazine);
+                return true;
             }
-            return true;
+            return false;
         }
         if (const auto found = Settings().find(key); found != Settings().end() && value.isBool()) {
             *found->second = value.asBool();

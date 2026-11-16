@@ -784,16 +784,18 @@ public partial class MainWindow : Window
         var nameRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
         _profileNameBox = CreateProfileTextBox(UiLanguage.Text("New profile name", "新配置名称"));
         var saveNew = CreateProfileButton(UiLanguage.Text("Save as new", "另存为"));
-        saveNew.Click += async (_, _) => await SaveProfileAsync(_profileNameBox.Text.Trim(), true);
-        var saveSelected = CreateProfileButton(UiLanguage.Text("Save", "保存"));
-        saveSelected.Click += async (_, _) =>
+        saveNew.Click += async (_, _) => await SaveProfileAsync(GetEnteredProfileName(), true);
+        var saveCustom = CreateProfileButton(UiLanguage.Text("Save", "保存"));
+        saveCustom.Click += async (_, _) =>
         {
-            if (_profileCombo?.SelectedItem is string selected) await SaveProfileAsync(selected, false);
-            else SetProfileStatus(UiLanguage.Text("Select a profile to save.", "请先选择要保存的配置。"), true);
+            var customName = GetEnteredProfileName();
+            if (customName is not null) await SaveProfileAsync(customName, false);
+            else if (_profileCombo?.SelectedItem is string selected) await SaveProfileAsync(selected, false);
+            else SetProfileStatus(UiLanguage.Text("Enter a profile name first.", "请先输入配置名称。"), true);
         };
         nameRow.Children.Add(_profileNameBox);
+        nameRow.Children.Add(saveCustom);
         nameRow.Children.Add(saveNew);
-        nameRow.Children.Add(saveSelected);
         controls.Children.Add(nameRow);
 
         var selectRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
@@ -885,6 +887,13 @@ public partial class MainWindow : Window
         catch (Exception error) { SetProfileStatus(error.Message, true); }
     }
 
+    private string? GetEnteredProfileName()
+    {
+        var raw = _profileNameBox?.Text.Trim();
+        if (string.IsNullOrWhiteSpace(raw) || raw == UiLanguage.Text("New profile name", "新配置名称")) return null;
+        return raw;
+    }
+
     private async Task SaveProfileAsync(string? name, bool requireNew)
     {
         if (string.IsNullOrWhiteSpace(name) || name == UiLanguage.Text("New profile name", "新配置名称"))
@@ -893,7 +902,11 @@ public partial class MainWindow : Window
             return;
         }
         name = string.Join("_", name.Split(System.IO.Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
-        if (name.Length == 0) return;
+        if (name.Length == 0)
+        {
+            SetProfileStatus(UiLanguage.Text("Enter a valid profile name.", "请输入有效的配置名称。"), true);
+            return;
+        }
         try
         {
             var path = System.IO.Path.Combine(ProfileDirectory, name + ".json");
@@ -913,9 +926,10 @@ public partial class MainWindow : Window
             state["__menuTheme"] = _selectedTheme;
             Directory.CreateDirectory(ProfileDirectory);
             File.WriteAllText(path, ProfileJson.Serialize(state));
+            _ = _pipe.SetAsync("ui_SaveConfig", true);
             RefreshProfiles(name);
-            if (_profileNameBox is not null) _profileNameBox.Clear();
             EndProfileTextInput();
+            if (_profileNameBox is not null) _profileNameBox.Text = UiLanguage.Text("New profile name", "新配置名称");
             SetProfileStatus(UiLanguage.Text("Configuration saved.", "配置已保存。"));
         }
         catch (Exception error) { SetProfileStatus(error.Message, true); }
@@ -937,8 +951,8 @@ public partial class MainWindow : Window
                 var key = setting.Key;
                 var value = setting.Value;
                 if (key == "__menuTheme") continue;
-                if (!await _pipe.SetAsync(key, value)) return;
-                _nativeState[key] = value;
+                if (await _pipe.SetAsync(key, value))
+                    _nativeState[key] = value;
             }
             if (settings.TryGetValue("ui_MenuHotkey", out var hotkey))
                 MenuPreferences.Save(hotkey: Convert.ToInt32(hotkey, CultureInfo.InvariantCulture));
@@ -1173,6 +1187,9 @@ public partial class MainWindow : Window
                 : new[] { "Head", "Neck", "Chest", "Abdomen", "Legs" },
             "cfg_AimbotBox" => UiLanguage.Chinese ? new[] { "方框", "四角框" } : new[] { "Box", "Corner Box" },
             "cfg_SelectedLanguage" => UiLanguage.Chinese ? new[] { "英语", "西班牙语", "葡萄牙语", "中文" } : new[] { "English", "Español", "Português", "中文" },
+            "cfg_TeleportMethod" => UiLanguage.Chinese
+                ? new[] { "智能（有目标传目标/无目标向前）", "仅选中目标", "向前穿透", "准星射线" }
+                : new[] { "Smart (Target / Forward)", "Selected Target Only", "Forward Through Walls", "Crosshair Raycast" },
             _ => Array.Empty<string>()
         };
         var combo = new ComboBox

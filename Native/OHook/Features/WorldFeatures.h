@@ -7,4 +7,8 @@
 namespace WorldFeatures {
     void Func_UpdateCurrentLevel(ReadyornotOverlay* Overlay);
     void Func_UnlitMode();
+    bool UnlockAllDoors();
+    bool KillCharactersByTeam(bool killSuspects, bool killCivilians);
+    bool CollectAllEvidence();
+    bool IncapacitateAllCharacters();
 }

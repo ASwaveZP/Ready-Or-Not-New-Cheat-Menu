@@ -46,6 +46,8 @@ void ActorCache::ClearCacheDuringLevelTransition() {
     if (OverlayInstance) {
         OverlayInstance->BestTargetActor = nullptr;
         OverlayInstance->BestTargetOther = nullptr;
+        OverlayInstance->TeleportTargetActor = nullptr;
+        OverlayInstance->TeleportTargetName.clear();
     }
 }
 
@@ -120,7 +122,8 @@ void ActorCache::CacheActors() {
     if (Configuration::cfg_DrawPlayerESP || Configuration::cfg_DrawSERTRedESP || Configuration::cfg_DrawSERTBlueESP || Configuration::cfg_DrawSuspectESP || Configuration::cfg_DrawCivilianESP || Configuration::cfg_DrawSquadESP || Configuration::cfg_DrawWoundedESP
         || Configuration::cfg_DrawPlayerCorpses || Configuration::cfg_DrawAICorpses || Configuration::cfg_DrawSuspectCorpses || Configuration::cfg_DrawCivilianCorpses
         || Configuration::cfg_NoSuspectFirefight || Configuration::cfg_DisarmAllSuspects || Configuration::cfg_ForceSuspectSurrender || Configuration::cfg_AutoComplySuspects || Configuration::cfg_EnableAimbot
-        || Configuration::cfg_TeleportToTarget || Configuration::cfg_EnableTPTarget || Configuration::cfg_BulletPenetration) {
+        || Configuration::cfg_TeleportToTarget || Configuration::cfg_EnableTPTarget || Configuration::cfg_BulletPenetration
+        || Configuration::cfg_DrawHeldItemsESP) {
         
         TArray<AActor*> FoundCharacters;
         UGameplayStatics::GetAllActorsOfClass(reinterpret_cast<UObject*>(World), AReadyOrNotCharacter::StaticClass(), &FoundCharacters);
@@ -129,8 +132,21 @@ void ActorCache::CacheActors() {
             if (IsLevelTransitioning.load()) break;
             
             auto* Character = reinterpret_cast<AReadyOrNotCharacter*>(A);
-            if (!Character || reinterpret_cast<AActor*>(Character) == LocalPlayer || !IsActorValid(reinterpret_cast<AActor*>(Character)))
+            if (!Character || !IsActorValid(reinterpret_cast<AActor*>(Character)))
                 continue;
+
+            // Read the active hand slot, never enumerate a character's inventory.
+            if (Configuration::cfg_DrawHeldItemsESP && !Character->IsDeadOrUnconscious()) {
+                auto* item = Character->GetEquippedItem();
+                if (item && IsActorValid(item) && item->Owner == Character
+                    && item->IsEquipped() && !item->IsPlayingHolster()) {
+                    auto held = ProcessItem(item, PlayerController, LocalPlayer);
+                    held.Category = EActorCategory::HeldItems;
+                    held.ItemHolder = Character;
+                    newActors.push_back(held);
+                }
+            }
+            if (Character == LocalPlayer) continue;
             
             CachedActorInfo info = ProcessCharacter(Character, PlayerController, LocalPlayer);
             if (info.Actor) {
@@ -144,24 +160,7 @@ void ActorCache::CacheActors() {
     // ==========================
     // Process Evidence Actors
     // ==========================
-    if (Configuration::cfg_DrawEvidenceESP || Configuration::cfg_DrawCollectedEvidenceESP) {
-        // Dropped guns are weapons with evidence components, not AEvidenceActor.
-        if (Configuration::cfg_DrawEvidenceESP) {
-            TArray<AActor*> weapons;
-            UGameplayStatics::GetAllActorsOfClass(reinterpret_cast<UObject*>(World), ABaseWeapon::StaticClass(), &weapons);
-            for (auto* actor : weapons) {
-                if (IsLevelTransitioning.load()) break;
-                if (!actor || !IsActorValid(actor)) continue;
-                auto* weapon = static_cast<ABaseWeapon*>(actor);
-                auto* evidence = weapon->EvidenceComponent;
-                if (!evidence || !IsComponentValid(evidence) || evidence->IsEvidenceCollected()
-                    || (!evidence->CanBeCollected() && !evidence->IsBeingCollected())) continue;
-                CachedActorInfo info = ProcessItem(weapon, PlayerController, LocalPlayer);
-                info.Category = EActorCategory::Evidence;
-                info.Color = EvidenceESPColor;
-                newActors.push_back(info);
-            }
-        }
+    if (Configuration::cfg_DrawEvidenceESP || Configuration::cfg_DrawCollectedEvidenceESP || Configuration::cfg_EnableTPTarget || Configuration::cfg_TeleportToTarget) {
         // Search for regular evidence actors (AEvidenceActor)
         TArray<AActor*> FoundEvidence;
         UGameplayStatics::GetAllActorsOfClass(reinterpret_cast<UObject*>(World), AEvidenceActor::StaticClass(), &FoundEvidence);
@@ -197,31 +196,25 @@ void ActorCache::CacheActors() {
         }
     }
 
-    // ==========================
-    // Process Items
-    // ==========================
-    if (Configuration::cfg_DrawItemsESP) {
-        TArray<AActor*> FoundItems;
-        UGameplayStatics::GetAllActorsOfClass(reinterpret_cast<UObject*>(World), ABaseItem::StaticClass(), &FoundItems);
-
-        for (AActor* A : FoundItems) {
+    // Dropped evidence firearms only. Equipped and inventory items are handled
+    // by the character's active hand slot above, not this weapon query.
+    if (Configuration::cfg_DrawItemsESP || Configuration::cfg_DrawEvidenceESP) {
+        TArray<AActor*> weapons;
+        UGameplayStatics::GetAllActorsOfClass(reinterpret_cast<UObject*>(World), ABaseWeapon::StaticClass(), &weapons);
+        for (auto* actor : weapons) {
             if (IsLevelTransitioning.load()) break;
-            
-            auto* Item = reinterpret_cast<ABaseItem*>(A);
-            if (!Item || !IsActorValid(reinterpret_cast<AActor*>(Item)))
-                continue;
-
-            // An evidence weapon already has its own marker above.
-            if (Configuration::cfg_DrawEvidenceESP && Item->IsA(ABaseWeapon::StaticClass())) {
-                auto* evidence = Item->EvidenceComponent;
-                if (evidence && IsComponentValid(evidence) && !evidence->IsEvidenceCollected()
-                    && (evidence->CanBeCollected() || evidence->IsBeingCollected())) continue;
+            if (!actor || !IsActorValid(actor)) continue;
+            auto* weapon = static_cast<ABaseWeapon*>(actor);
+            auto* evidence = weapon->EvidenceComponent;
+            if (weapon->IsEquipped() || !evidence || !IsComponentValid(evidence) || evidence->IsEvidenceCollected()
+                || (!evidence->CanBeCollected() && !evidence->IsBeingCollected())) continue;
+            auto info = ProcessItem(weapon, PlayerController, LocalPlayer);
+            // One marker when both weapons and evidence are enabled.
+            if (!Configuration::cfg_DrawItemsESP) {
+                info.Category = EActorCategory::Evidence;
+                info.Color = EvidenceESPColor;
             }
-            
-            CachedActorInfo info = ProcessItem(Item, PlayerController, LocalPlayer);
-            if (info.Actor) {
-                newActors.push_back(info);
-            }
+            newActors.push_back(info);
         }
     }
 

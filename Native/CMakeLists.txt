@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.10)
-project(OHook CXX)
+set(RON_VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION")
+file(READ "${RON_VERSION_FILE}" RON_VERSION)
+string(STRIP "${RON_VERSION}" RON_VERSION)
+if(NOT RON_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "VERSION must contain major.minor.patch")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${RON_VERSION_FILE}")
+project(OHook VERSION ${RON_VERSION} LANGUAGES CXX)
 enable_language(C)
 
 if(WIN32)
@@ -27,7 +34,7 @@ if(WIN32)
             /p:Configuration=Release
             "/p:OutputPath=${MENU_OUTPUT_DIR}/"
             /p:DebugType=None /p:DebugSymbols=false /verbosity:minimal
-        DEPENDS ${MENU_INPUTS} "${MENU_MODEL_GLB}"
+        DEPENDS ${MENU_INPUTS} "${MENU_MODEL_GLB}" "${RON_VERSION_FILE}"
         VERBATIM)
     add_custom_target(ManagedMenuPayload DEPENDS "${MANAGED_MENU_DLL}")
 
@@ -35,6 +42,8 @@ if(WIN32)
     set(MENU_RESOURCE "${CMAKE_CURRENT_BINARY_DIR}/RONMenuPayload.rc")
     file(WRITE "${MENU_RESOURCE}" "101 RCDATA \"${MANAGED_MENU_DLL_RC}\"\n")
     set_source_files_properties("${MENU_RESOURCE}" PROPERTIES OBJECT_DEPENDS "${MANAGED_MENU_DLL}")
+    set(VERSION_RESOURCE "${CMAKE_CURRENT_BINARY_DIR}/OHookVersion.rc")
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/OHookVersion.rc.in" "${VERSION_RESOURCE}" @ONLY)
 
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/$<CONFIG>" CACHE PATH "Static library output directory" FORCE)
 endif()
@@ -171,7 +180,7 @@ set(OHOOK_ALL_HEADERS
 )
 
 # Create the OHook DLL
-add_library(OHook SHARED ${OHOOK_ALL_SOURCES} ${OHOOK_ALL_HEADERS} ${MENU_RESOURCE})
+add_library(OHook SHARED ${OHOOK_ALL_SOURCES} ${OHOOK_ALL_HEADERS} ${MENU_RESOURCE} ${VERSION_RESOURCE})
 if(WIN32)
     add_dependencies(OHook ManagedMenuPayload)
     set_target_properties(OHook PROPERTIES

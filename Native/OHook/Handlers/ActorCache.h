@@ -33,6 +33,7 @@ enum class EActorCategory {
     Evidence,
     CollectedEvidence,
     Items,
+    HeldItems,
     Doors,
     DoorTraps,
     Securables,
@@ -68,6 +69,7 @@ struct ItemMapping {
 // Cached actor info structure
 struct CachedActorInfo {
     SDK::AActor* Actor = nullptr;
+    SDK::AReadyOrNotCharacter* ItemHolder = nullptr;
     EActorCategory Category = EActorCategory::Unknown;
     SDK::FVector WorldPosition;
     SDK::FString DisplayName;

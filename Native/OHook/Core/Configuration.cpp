@@ -56,6 +56,7 @@ int Configuration::cfg_AimTarget = 0;
 // Weapon settings
 bool Configuration::cfg_InfiniteAmmo = false;
 bool Configuration::cfg_AutoFire = false;
+bool Configuration::cfg_TriggerBot = false;
 bool Configuration::cfg_BulletPenetration = false;
 bool Configuration::cfg_OneHitKill = false;
 bool Configuration::cfg_ForcedCrosshairShot = false;
@@ -179,6 +180,7 @@ float Configuration::cfg_MaxAIESPDistance = 100000.0f;
 bool Configuration::cfg_DrawEvidenceESP = false;
 bool Configuration::cfg_DrawCollectedEvidenceESP = false;
 bool Configuration::cfg_DrawItemsESP = false;
+bool Configuration::cfg_DrawHeldItemsESP = false;
 bool Configuration::cfg_DrawDoorsESP = false;
 bool Configuration::cfg_DrawTrapsESP = false;
 bool Configuration::cfg_DrawSecurablesESP = false;
@@ -417,6 +419,7 @@ void Configuration::Load(ReadyornotOverlay* Overlay) {
     // Weapon settings
     ParseBool("Enable Infinite Ammo", cfg_InfiniteAmmo);
     ParseBool("Enable Auto Fire", cfg_AutoFire);
+    ParseBool("Enable Trigger Bot", cfg_TriggerBot);
     ParseBool("Enable Bullet Penetration", cfg_BulletPenetration);
     ParseBool("Enable One Hit Kill", cfg_OneHitKill);
     ParseBool("Enable Forced Crosshair Shot", cfg_ForcedCrosshairShot);
@@ -550,6 +553,7 @@ void Configuration::Load(ReadyornotOverlay* Overlay) {
     ParseBool("Enable Evidence ESP", cfg_DrawEvidenceESP);
     ParseBool("Enable Collected Evidence ESP", cfg_DrawCollectedEvidenceESP);
     ParseBool("Enable Items ESP", cfg_DrawItemsESP);
+    ParseBool("Enable Held Items ESP", cfg_DrawHeldItemsESP);
     ParseBool("Enable Doors ESP", cfg_DrawDoorsESP);
     ParseBool("Enable Traps ESP", cfg_DrawTrapsESP);
     ParseBool("Enable Securables ESP", cfg_DrawSecurablesESP);
@@ -628,6 +632,7 @@ void Configuration::Save() {
         // Weapon settings
         configFile << "    \"Enable Infinite Ammo\": " << (cfg_InfiniteAmmo ? "true" : "false") << ",\n";
         configFile << "    \"Enable Auto Fire\": " << (cfg_AutoFire ? "true" : "false") << ",\n";
+        configFile << "    \"Enable Trigger Bot\": " << (cfg_TriggerBot ? "true" : "false") << ",\n";
         configFile << "    \"Enable Bullet Penetration\": " << (cfg_BulletPenetration ? "true" : "false") << ",\n";
         configFile << "    \"Enable One Hit Kill\": " << (cfg_OneHitKill ? "true" : "false") << ",\n";
         configFile << "    \"Enable Forced Crosshair Shot\": " << (cfg_ForcedCrosshairShot ? "true" : "false") << ",\n";
@@ -759,6 +764,7 @@ void Configuration::Save() {
         configFile << "    \"Enable Evidence ESP\": " << (cfg_DrawEvidenceESP ? "true" : "false") << ",\n";
         configFile << "    \"Enable Collected Evidence ESP\": " << (cfg_DrawCollectedEvidenceESP ? "true" : "false") << ",\n";
         configFile << "    \"Enable Items ESP\": " << (cfg_DrawItemsESP ? "true" : "false") << ",\n";
+        configFile << "    \"Enable Held Items ESP\": " << (cfg_DrawHeldItemsESP ? "true" : "false") << ",\n";
         configFile << "    \"Enable Doors ESP\": " << (cfg_DrawDoorsESP ? "true" : "false") << ",\n";
         configFile << "    \"Enable Traps ESP\": " << (cfg_DrawTrapsESP ? "true" : "false") << ",\n";
         configFile << "    \"Enable Securables ESP\": " << (cfg_DrawSecurablesESP ? "true" : "false") << ",\n";

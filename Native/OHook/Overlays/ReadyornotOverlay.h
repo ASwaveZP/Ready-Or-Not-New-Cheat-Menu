@@ -70,6 +70,10 @@ public:
     FVector BestTargetOtherLocation;
     FRotator BestTargetOtherRotation;
 
+    AActor* TeleportTargetActor = nullptr;
+    FVector TeleportTargetLocation{};
+    std::string TeleportTargetName;
+
     FName LockedBoneName;
     ULevel* CurrentLevel;
     std::string CurrentMap = "Unknown";

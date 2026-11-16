@@ -7,6 +7,7 @@
 #include "SDKExt.h"
 #include "ReadyornotOverlay.h"
 #include "PlayerFeatures.h"
+#include "WorldFeatures.h"
 
 #include <SDK/ReadyOrNot_parameters.hpp>
 
@@ -322,182 +323,324 @@ namespace PlayerFeatures {
         }
     }
 
+    namespace {
+        void ForceCharacterComply(SDK::ACyberneticCharacter* cyberneticChar, bool disarmWeapons) {
+            if (!cyberneticChar || !IsActorValid(cyberneticChar)) return;
+            if (!cyberneticChar->CharacterHealth || !IsComponentValid(cyberneticChar->CharacterHealth)) return;
+            if (cyberneticChar->GetHealthStatus() == SDK::EPlayerHealthStatus::HS_Dead
+                || cyberneticChar->IsDeadOrUnconscious()
+                || cyberneticChar->IsArrested()) return;
+
+            if (disarmWeapons) {
+                cyberneticChar->bDrawingWeapon = false;
+                cyberneticChar->bPickingUpWeapon = false;
+                cyberneticChar->bIsRaisingWeapon = false;
+                cyberneticChar->bIsLoweringWeapon = false;
+                cyberneticChar->DrawingWeaponTime = 0.0f;
+                cyberneticChar->PickingUpWeaponTime = 0.0f;
+                cyberneticChar->RaisingWeaponTime = 0.0f;
+                cyberneticChar->LoweringWeaponTime = 0.0f;
+            }
+
+            cyberneticChar->bHeardYellFromOfficer = true;
+            cyberneticChar->TimeSinceHeardOfficerYell = 0.0f;
+            cyberneticChar->ForceComplianceStrength = 1.0f;
+            cyberneticChar->CombatState = SDK::ECombatState::CS_Unaware;
+            cyberneticChar->Stress = 0.0f;
+            cyberneticChar->HesitationTime = 0.0f;
+            cyberneticChar->bIsFakeSurrender = false;
+
+            const bool alreadyComplying = cyberneticChar->IsComplying()
+                || cyberneticChar->IsSurrendered()
+                || cyberneticChar->IsSurrenderComplete();
+            if (!alreadyComplying) {
+                cyberneticChar->Surrender();
+            }
+
+            cyberneticChar->bIsComplying = true;
+            cyberneticChar->bIsWaiting = true;
+        }
+
+        void ApplyComplyToCategories(bool includeCivilians, bool disarmWeapons) {
+            if (IsLevelTransitioning.load()) return;
+
+            const auto& allActors = ActorCache::GetInstance().GetCachedActors();
+            for (const auto& actorInfo : allActors) {
+                const bool matchesCategory = actorInfo.Category == EActorCategory::Suspect
+                    || (includeCivilians && actorInfo.Category == EActorCategory::Civilian);
+                if (!matchesCategory) continue;
+                if (!actorInfo.Actor || !IsActorValid(actorInfo.Actor)) continue;
+
+                auto* cyberneticChar = static_cast<SDK::ACyberneticCharacter*>(actorInfo.Actor);
+                ForceCharacterComply(cyberneticChar, disarmWeapons);
+            }
+        }
+
+        bool IsTeleportTargetCategory(EActorCategory category) {
+            switch (category) {
+                case EActorCategory::Suspect:
+                case EActorCategory::Civilian:
+                case EActorCategory::Wounded:
+                case EActorCategory::Player:
+                case EActorCategory::SERT_Red:
+                case EActorCategory::SERT_Blue:
+                case EActorCategory::Squad:
+                case EActorCategory::Evidence:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        bool TryComputeDirectionalDestination(
+            SDK::AReadyOrNotPlayerController* controller,
+            SDK::AActor* pawn,
+            bool useRaycast,
+            SDK::FVector& outDestination)
+        {
+            if (!controller || !controller->PlayerCameraManager || !IsActorValid(controller->PlayerCameraManager)) {
+                return false;
+            }
+
+            const float meters = Configuration::cfg_TPNoTargetDistance > 0.0f
+                ? Configuration::cfg_TPNoTargetDistance
+                : 15.0f;
+            const float distanceCm = meters * 100.0f;
+            const FVector camLoc = controller->PlayerCameraManager->GetCameraLocation();
+            const FRotator camRot = controller->PlayerCameraManager->GetCameraRotation();
+            const FVector forward = UKismetMathLibrary::GetForwardVector(camRot);
+
+            if (!useRaycast) {
+                outDestination = camLoc + forward * distanceCm;
+                outDestination.Z += Configuration::cfg_ActorTeleportOffset;
+                return true;
+            }
+
+            UWorld* world = GetWorld();
+            if (!world) return false;
+
+            TArray<AActor*> ignoreActors;
+            ignoreActors.Add(pawn);
+            FHitResult hit{};
+            const FVector traceStart = camLoc + forward * 30.0f;
+            const FVector traceEnd = camLoc + forward * distanceCm;
+            const bool hitSomething = UKismetSystemLibrary::LineTraceSingle(
+                reinterpret_cast<UObject*>(world),
+                traceStart,
+                traceEnd,
+                ETraceTypeQuery::TraceTypeQuery1,
+                false,
+                ignoreActors,
+                EDrawDebugTrace::None,
+                &hit,
+                true,
+                FLinearColor{ 0.f, 0.f, 0.f, 0.f },
+                FLinearColor{ 0.f, 0.f, 0.f, 0.f },
+                0.0f);
+
+            if (hitSomething && hit.bBlockingHit) {
+                outDestination = FVector{
+                    hit.ImpactPoint.X + hit.ImpactNormal.X * 45.0f,
+                    hit.ImpactPoint.Y + hit.ImpactNormal.Y * 45.0f,
+                    hit.ImpactPoint.Z + hit.ImpactNormal.Z * 45.0f + Configuration::cfg_ActorTeleportOffset
+                };
+            } else {
+                outDestination = traceEnd;
+                outDestination.Z += Configuration::cfg_ActorTeleportOffset;
+            }
+            return true;
+        }
+    }
+
     void DoDisarmAllSuspects() {
-        if (!Configuration::cfg_DisarmAllSuspects)
-            return;
-
-        if (IsLevelTransitioning.load()) {
-            return;
-        }
-
-        const auto& allActors = ActorCache::GetInstance().GetCachedActors();
-        
-        for (const auto& actorInfo : allActors) {
-            if (actorInfo.Category != EActorCategory::Suspect)
-                continue;
-                
-            if (!actorInfo.Actor || !IsActorValid(actorInfo.Actor))
-                continue;
-                
-            auto* CyberneticChar = static_cast<SDK::ACyberneticCharacter*>(actorInfo.Actor);
-            if (!CyberneticChar || !IsActorValid(CyberneticChar))
-                continue;
-                
-            if (!CyberneticChar->CharacterHealth || 
-                !IsComponentValid(CyberneticChar->CharacterHealth) || 
-                CyberneticChar->GetHealthStatus() == SDK::EPlayerHealthStatus::HS_Dead)
-                continue;
-            const bool wasComplying = CyberneticChar->IsComplying();
-                
-            CyberneticChar->bDrawingWeapon = false;
-            CyberneticChar->bPickingUpWeapon = false;
-            CyberneticChar->bIsRaisingWeapon = false;
-            CyberneticChar->bIsLoweringWeapon = false;
-            
-            CyberneticChar->DrawingWeaponTime = 0.0f;
-            CyberneticChar->PickingUpWeaponTime = 0.0f;
-            CyberneticChar->RaisingWeaponTime = 0.0f;
-            CyberneticChar->LoweringWeaponTime = 0.0f;
-            CyberneticChar->ForceComplianceStrength = 1.0f;
-            CyberneticChar->bIsComplying = true;
-            CyberneticChar->bIsWaiting = true;
-            CyberneticChar->CombatState = SDK::ECombatState::CS_Unaware;
-            CyberneticChar->bIsFakeSurrender = false;
-            if (!wasComplying) CyberneticChar->Surrender();
-        }
+        if (!Configuration::cfg_DisarmAllSuspects) return;
+        ApplyComplyToCategories(false, true);
     }
 
     void DoForceSuspectSurrender() {
-        if (!Configuration::cfg_ForceSuspectSurrender)
-            return;
-
-        if (IsLevelTransitioning.load()) {
-            return;
-        }
-
-        const auto& allActors = ActorCache::GetInstance().GetCachedActors();
-        
-        for (const auto& actorInfo : allActors) {
-            if (actorInfo.Category != EActorCategory::Suspect)
-                continue;
-                
-            if (!actorInfo.Actor || !IsActorValid(actorInfo.Actor))
-                continue;
-                
-            auto* CyberneticChar = static_cast<SDK::ACyberneticCharacter*>(actorInfo.Actor);
-            if (!CyberneticChar || !IsActorValid(CyberneticChar))
-                continue;
-                
-            if (!CyberneticChar->CharacterHealth || 
-                !IsComponentValid(CyberneticChar->CharacterHealth) || 
-                CyberneticChar->GetHealthStatus() == SDK::EPlayerHealthStatus::HS_Dead)
-                continue;
-                
-            if (!CyberneticChar->IsComplying()) {
-                CyberneticChar->bIsComplying = true;
-                
-                CyberneticChar->Surrender();
-                
-                CyberneticChar->ForceComplianceStrength = 1.0f;
-                
-                CyberneticChar->CombatState = SDK::ECombatState::CS_Unaware;
-                
-                CyberneticChar->bIsFakeSurrender = false;
-            }
-        }
+        if (!Configuration::cfg_ForceSuspectSurrender) return;
+        ApplyComplyToCategories(false, false);
     }
 
     void DoAutoComplySuspects() {
-        if (!Configuration::cfg_AutoComplySuspects)
-            return;
-
-        if (IsLevelTransitioning.load()) {
-            return;
-        }
-
-        const auto& allActors = ActorCache::GetInstance().GetCachedActors();
-        
-        for (const auto& actorInfo : allActors) {
-            if (actorInfo.Category != EActorCategory::Suspect &&
-                actorInfo.Category != EActorCategory::Civilian)
-                continue;
-                
-            if (!actorInfo.Actor || !IsActorValid(actorInfo.Actor))
-                continue;
-                
-            auto* CyberneticChar = static_cast<SDK::ACyberneticCharacter*>(actorInfo.Actor);
-            if (!CyberneticChar || !IsActorValid(CyberneticChar))
-                continue;
-                
-            if (!CyberneticChar->CharacterHealth || 
-                !IsComponentValid(CyberneticChar->CharacterHealth) || 
-                CyberneticChar->GetHealthStatus() == SDK::EPlayerHealthStatus::HS_Dead)
-                continue;
-                
-            CyberneticChar->ForceComplianceStrength = 1.0f;
-            const bool wasComplying = CyberneticChar->IsComplying();
-            CyberneticChar->bIsComplying = true;
-            
-            CyberneticChar->bIsWaiting = true;
-            
-            CyberneticChar->CombatState = SDK::ECombatState::CS_Unaware;
-            
-            CyberneticChar->Stress = 0.0f;
-            
-            CyberneticChar->HesitationTime = 0.0f;
-            
-            CyberneticChar->bIsFakeSurrender = false;
-            if (!wasComplying) CyberneticChar->Surrender();
-        }
+        if (!Configuration::cfg_AutoComplySuspects) return;
+        ApplyComplyToCategories(true, true);
     }
 
     void DoDisableAllTraps() {
-        if (!Configuration::cfg_DisableAllTraps)
-            return;
-
-        if (IsLevelTransitioning.load()) {
+        if (!Configuration::cfg_DisableAllTraps || IsLevelTransitioning.load()) {
             return;
         }
 
+        auto* localChar = GetARONCharacter();
         const auto& allActors = ActorCache::GetInstance().GetCachedActors();
-        
         for (const auto& actorInfo : allActors) {
-            if (actorInfo.Category != EActorCategory::DoorTraps)
-                continue;
-                
-            if (!actorInfo.Actor || !IsActorValid(actorInfo.Actor))
-                continue;
-                
-            auto* TrapActor = static_cast<SDK::ATrapActor*>(actorInfo.Actor);
-            if (!TrapActor || !IsActorValid(TrapActor))
-                continue;
-                
-            if (TrapActor->TrapStatus != SDK::ETrapState::TS_Disabled) {
-                TrapActor->Server_OnTrapDisarmed();
-                TrapActor->TrapStatus = SDK::ETrapState::TS_Disabled;
-                
-                TrapActor->TrapDeInit();
+            if (actorInfo.Category != EActorCategory::DoorTraps) continue;
+            if (!actorInfo.Actor || !IsActorValid(actorInfo.Actor)) continue;
+
+            auto* trapActor = static_cast<SDK::ATrapActor*>(actorInfo.Actor);
+            if (!trapActor || !IsActorValid(trapActor)) continue;
+
+            if (trapActor->TrapStatus != SDK::ETrapState::TS_Disabled) {
+                trapActor->OnTrapDisarmed(localChar);
+                trapActor->Server_OnTrapDisarmed();
+                trapActor->Multicast_OnTrapDisarmed();
+                trapActor->TrapStatus = SDK::ETrapState::TS_Disabled;
+                trapActor->TrapDeInit();
             }
+
+            if (trapActor->TripWireTriggerComponent && IsComponentValid(trapActor->TripWireTriggerComponent)) {
+                trapActor->TripWireTriggerComponent->SetCollisionEnabled(SDK::ECollisionEnabled::NoCollision);
+            }
+        }
+    }
+
+    void UpdateTeleportTarget(ReadyornotOverlay* overlay, const SDK::AHUD* hud) {
+        if (!overlay) return;
+
+        auto clearTarget = [&]() {
+            overlay->TeleportTargetActor = nullptr;
+            overlay->TeleportTargetLocation = FVector{ 0.f, 0.f, 0.f };
+            overlay->TeleportTargetName.clear();
+        };
+
+        const bool teleportEnabled = Configuration::cfg_TeleportToTarget || Configuration::cfg_EnableTPTarget;
+        if (!teleportEnabled || !Configuration::cfg_EnableTPTarget || IsLevelTransitioning.load() || !hud || !hud->Canvas) {
+            clearTarget();
+            return;
+        }
+
+        if (Configuration::cfg_TPTargetKey != 0 && !Hotkey::IsPressed(Configuration::cfg_TPTargetKey)) {
+            clearTarget();
+            return;
+        }
+
+        auto* controller = GetARONPC();
+        auto* localPawn = controller ? controller->K2_GetPawn() : nullptr;
+        if (!controller || !IsActorValid(controller) || !localPawn || !IsActorValid(localPawn)) {
+            clearTarget();
+            return;
+        }
+
+        float radius = Configuration::cfg_TPFOVRadius;
+        if (Configuration::cfg_SmallerTPTargeting) radius *= 0.5f;
+        if (radius <= 0.0f) {
+            clearTarget();
+            return;
+        }
+
+        const FVector2D center{ hud->Canvas->SizeX * 0.5f, hud->Canvas->SizeY * 0.5f };
+        const auto& allActors = ActorCache::GetInstance().GetCachedActors();
+
+        AActor* bestActor = nullptr;
+        FVector bestLoc{};
+        std::string bestName;
+        float bestScreenDist = radius;
+
+        for (const auto& info : allActors) {
+            if (!IsTeleportTargetCategory(info.Category)) continue;
+            if (!info.Actor || !IsActorValid(info.Actor) || info.Actor == localPawn) continue;
+
+            if (info.Category != EActorCategory::Evidence) {
+                auto* character = static_cast<SDK::AReadyOrNotCharacter*>(info.Actor);
+                if (!character->CharacterHealth || !IsComponentValid(character->CharacterHealth)) continue;
+                if (character->GetHealthStatus() == EPlayerHealthStatus::HS_Dead) continue;
+            } else {
+                auto* evidence = static_cast<SDK::AEvidenceActor*>(info.Actor);
+                if (!evidence->EvidenceComponent || !IsComponentValid(evidence->EvidenceComponent)) continue;
+                if (evidence->EvidenceComponent->IsEvidenceCollected() || !evidence->EvidenceComponent->CanBeCollected()) continue;
+            }
+
+            const FVector worldLoc = info.Actor->K2_GetActorLocation();
+            FVector2D screenPos{};
+            if (!controller->ProjectWorldLocationToScreen(worldLoc, &screenPos, true)) continue;
+
+            const float screenDist = CustomMath::Sqrt(
+                CustomMath::Square(screenPos.X - center.X) +
+                CustomMath::Square(screenPos.Y - center.Y));
+            if (screenDist <= bestScreenDist) {
+                bestScreenDist = screenDist;
+                bestActor = info.Actor;
+                bestLoc = worldLoc;
+                bestName = info.CharacterName;
+            }
+        }
+
+        if (bestActor) {
+            overlay->TeleportTargetActor = bestActor;
+            overlay->TeleportTargetLocation = bestLoc;
+            overlay->TeleportTargetName = std::move(bestName);
+        } else {
+            clearTarget();
         }
     }
 
     void DoTeleportToTarget(ReadyornotOverlay* overlay) {
         const bool enabled = Configuration::cfg_TeleportToTarget || Configuration::cfg_EnableTPTarget;
-        const int key = Configuration::cfg_EnableTPTarget ? Configuration::cfg_TPTargetKey : Configuration::cfg_TeleportKey;
+        const int key = Configuration::cfg_TeleportKey != 0
+            ? Configuration::cfg_TeleportKey
+            : (Configuration::cfg_EnableTPTarget ? Configuration::cfg_TPTargetKey : 0);
+
         static bool wasPressed = false;
-        if (!enabled || !overlay || !Hotkey::IsPressed(key)) {
+        if (!enabled || !overlay || key == 0 || IsLevelTransitioning.load() || !Hotkey::IsPressed(key)) {
             wasPressed = false;
             return;
         }
         if (wasPressed) return;
         wasPressed = true;
+
         auto* controller = GetARONPC();
         auto* pawn = controller ? controller->K2_GetPawn() : nullptr;
-        AActor* target = overlay->BestTargetActor;
-        if (!target || !IsActorValid(target) || !pawn || !IsActorValid(pawn)) return;
-        FVector destination = target->K2_GetActorLocation();
-        destination.Z += Configuration::cfg_ActorTeleportOffset;
-        FHitResult hit{};
-        pawn->K2_SetActorLocation(destination, false, &hit, true);
+        if (!controller || !IsActorValid(controller) || !pawn || !IsActorValid(pawn)) return;
+
+        AActor* target = (Configuration::cfg_EnableTPTarget && overlay->TeleportTargetActor && IsActorValid(overlay->TeleportTargetActor))
+            ? overlay->TeleportTargetActor
+            : nullptr;
+
+        FVector destination{};
+        const int method = Configuration::cfg_TeleportMethod;
+        if (method == 1) {
+            // Target Only: require a valid selected target.
+            if (!target) return;
+            destination = target->K2_GetActorLocation();
+            destination.Z += Configuration::cfg_ActorTeleportOffset;
+        } else if (method == 0 && target) {
+            destination = target->K2_GetActorLocation();
+            destination.Z += Configuration::cfg_ActorTeleportOffset;
+        } else if (method == 2) {
+            if (!TryComputeDirectionalDestination(controller, pawn, false, destination)) return;
+        } else {
+            // Method 0 fallback (no target) and Method 3 (crosshair raycast)
+            if (!TryComputeDirectionalDestination(controller, pawn, true, destination)) return;
+        }
+
+        if (auto* ronChar = GetARONCharacter(); ronChar && IsActorValid(ronChar)
+            && ronChar->CharacterMovement && IsComponentValid(ronChar->CharacterMovement)) {
+            ronChar->CharacterMovement->Velocity = FVector{ 0.f, 0.f, 0.f };
+        }
+
+        const FRotator rot = pawn->K2_GetActorRotation();
+        if (!pawn->K2_TeleportTo(destination, rot)) {
+            FHitResult hit{};
+            pawn->K2_SetActorLocation(destination, false, &hit, true);
+        }
+    }
+
+    void DoWorldActionHotkeys() {
+        if (IsLevelTransitioning.load()) return;
+
+        static bool wasIncapacitatePressed = false;
+        const bool incapacitatePressed = Hotkey::IsPressed(Configuration::cfg_IncapacitateAllKey);
+        if (incapacitatePressed && !wasIncapacitatePressed) {
+            WorldFeatures::IncapacitateAllCharacters();
+        }
+        wasIncapacitatePressed = incapacitatePressed;
+
+        static bool wasCollectEvidencePressed = false;
+        const bool collectEvidencePressed = Hotkey::IsPressed(Configuration::cfg_CollectAllEvidenceKey);
+        if (collectEvidencePressed && !wasCollectEvidencePressed) {
+            WorldFeatures::CollectAllEvidence();
+        }
+        wasCollectEvidencePressed = collectEvidencePressed;
     }
 }

@@ -68,6 +68,7 @@ public:
     // Weapon settings
     static bool cfg_InfiniteAmmo;
     static bool cfg_AutoFire;
+    static bool cfg_TriggerBot;
     static bool cfg_BulletPenetration;
     static bool cfg_OneHitKill;
     static bool cfg_ForcedCrosshairShot;
@@ -191,6 +192,7 @@ public:
     static bool cfg_DrawEvidenceESP;
     static bool cfg_DrawCollectedEvidenceESP;
     static bool cfg_DrawItemsESP;
+    static bool cfg_DrawHeldItemsESP;
     static bool cfg_DrawDoorsESP;
     static bool cfg_DrawTrapsESP;
     static bool cfg_DrawSecurablesESP;

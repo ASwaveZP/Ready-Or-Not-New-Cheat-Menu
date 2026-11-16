@@ -21,16 +21,18 @@
 | --- | --- |
 | 菜单 | 中英文界面、主题、按键绑定、配置预设、地图与连接状态、模型预览 |
 | 角色透视 | 玩家、嫌疑人、平民、AI 队友、小队及伤员分类；方框、名字、生命值、骨骼、射线、距离与颜色设置，部分分类支持尸体标记 |
-| 证物与武器 | 独立证物、可收取的掉落枪械、已收取证物袋；“显示武器”统一控制武器及其他物品，避免重复枪械标记 |
+| 证物与武器 | 独立证物和已收取证物袋分别控制；“显示武器”只显示掉落后可收取的证物枪械；“手持物品”单独显示 AI 和玩家当前手持的物品 |
 | 场景显示 | 陷阱与任务目标 |
 | 自瞄 | 目标骨骼、视线检查、范围、平滑与按键设置；随距离和姿态变化跟踪所选骨骼部位 |
-| 武器 | 无限弹药、弹匣补充、自定义射速、自动射击模式、一击必杀、准星射击方向及武器效果调整 |
+| 武器 | 无限弹药、弹匣补充、自定义射速、强制连发、准星自动射击、一击必杀、准星射击方向及武器效果调整 |
 | 玩家 | 无敌、移动速度、玩家穿墙、视野调整 |
 | 世界交互 | 嫌疑人行为控制、解除武装、投降/服从、陷阱禁用、证物收集及传送相关操作 |
 
 **子弹穿墙仍在调试。** 目前只支持单人或主机，以及使用射线判定的武器。开启后沿射击方向直接检测嫌疑人，忽略中间墙体；需要瞄准目标，目标也必须已经加载。实体弹丸暂不支持，护甲、命中反馈和联机效果还需要继续测试。
 
 **尚未完成：** 静默瞄准、瞬间换弹、防闪光、无重量、无硬直、解锁全部物品。这些选项暂时保留在菜单中，功能还没有接通。
+
+**强制连发与自动射击：** 强制连发把武器切到全自动模式，需要按住开火键。自动射击是独立开关，准星对准未投降且仍有行动能力的嫌疑人时自动扣动扳机，移开准星后停止；不会穿过遮挡物寻找目标，打开菜单、切出游戏或换弹时暂停。两项可以同时开启。
 
 针对游戏卡顿，我减少了事件记录和重复对象扫描，给骨骼查找和命中检测加了缓存，菜单隐藏后也会停止连接轮询。具体效果还需要在不同场景下测试，暂时没有帧率对比数据。
 
@@ -129,16 +131,18 @@ This is my reworked feature menu for Ready or Not. I moved the settings interfac
 | --- | --- |
 | Menu | Chinese/English UI, themes, key bindings, profiles, map/connection status and model preview |
 | Character ESP | Player, suspect, civilian, AI teammate, squad and wounded categories; boxes, names, health, skeletons, rays, distance/colors and selected corpse categories |
-| Evidence and weapons | Evidence actors, collectible dropped firearms and collected evidence bags; one Show Weapons control covers weapons and other items, avoiding duplicate firearm markers |
+| Evidence and weapons | Separate controls for evidence and collected bags; Show Weapons displays only dropped evidence firearms, while Held Items displays the active hand item of AI characters and players |
 | World visuals | Traps and mission objectives |
 | Aim | Bone selection, visibility checks, range, smoothing and key activation; tracking of the selected joint as distance and pose change |
-| Weapons | Infinite ammunition, magazine replenishment, custom fire rate, automatic fire mode, increased damage, crosshair shot direction and weapon-effect adjustments |
+| Weapons | Infinite ammunition, magazine replenishment, custom fire rate, forced full auto, crosshair-triggered shooting, increased damage, crosshair shot direction and weapon-effect adjustments |
 | Player | God mode, movement speed, noclip and FOV adjustment |
 | World actions | Suspect behavior control, disarming, surrender/compliance, trap disabling, evidence collection and teleport actions |
 
 **Wall hits are still experimental.** They currently support single-player or host sessions and hitscan weapons. The feature checks suspects along the firing direction while ignoring intervening walls. You still need to aim at a loaded target. Physical projectiles are not supported, and armor, hit feedback and network behavior need further testing.
 
 **Not finished yet:** silent aim, instant reload, no flash, no weight, no stagger and unlock-all-items. These controls remain in the menu, but their functionality is not connected yet.
+
+**Force Full Auto and Auto Shoot:** Force Full Auto selects automatic fire mode and still requires holding the fire button. Auto Shoot is a separate switch that pulls the trigger when the crosshair hits an active, non-surrendered suspect and releases it when the target is lost. It does not acquire targets through cover and pauses during reloads, while the menu is open, or when the game loses focus. Both options can be enabled together.
 
 To address stuttering, I reduced event logging and duplicate actor scans, cached bone lookups and reused actor data for hit detection. Connection polling stops when the menu is hidden. Performance still needs testing across different scenes; I do not have frame-rate comparisons yet.
 

@@ -1,6 +1,7 @@
 ﻿#include "DetourManager.h"
 #include "ReadyornotOverlay.h"
 #include "Configuration.h"
+#include "MenuPipe.h"
 #include "SDKExt.h"
 #include "Utils.h"
 #include "InputOwnership.h"
@@ -99,23 +100,36 @@ void DetourManager::ProcessEventDetour(const UObject* Class, const UFunction* Fu
         }
     }
 
+    if (Configuration::cfg_BulletPenetration && Params && eventKind == EventKind::Fire
+        && Class->IsA(ABaseMagazineWeapon::StaticClass())) {
+        auto* weapon = const_cast<ABaseMagazineWeapon*>(static_cast<const ABaseMagazineWeapon*>(Class));
+        if (weapon && !weapon->bHitScan) {
+            const auto* fire = reinterpret_cast<Params::BaseMagazineWeapon_Server_OnFire*>(Params);
+            AimFeatures::TryAuthorityProjectileWallHit(weapon, fire->SpawnLoc, fire->Direction);
+        }
+    }
+
     // Update once per HUD frame, not once for every ticking world actor.
     if (eventKind == EventKind::HUD && Class->IsA(AHUD::StaticClass())) {
         const auto Overlay = dynamic_cast<ReadyornotOverlay*>(OverlayBase::Instance);
         WorldFeatures::Func_UpdateCurrentLevel(Overlay);
         ActorCache::GetInstance().Update();
-        // Apply queued menu visibility transitions on the game thread.
-        // ChangeInputMode and the controller cursor fields are game-thread
-        // state and must not be touched from the render/pipe thread.
+        // Apply queued menu visibility transitions and pipe commands on the game thread.
+        // ChangeInputMode and UE actor/world calls are game-thread state and
+        // must not be touched from the render/pipe thread.
         InputOwnership::EnsureDisplayMode();
         InputOwnership::ApplyPending();
+        MenuPipe::ApplyPending();
 
         AimFeatures::DoTargeting(Overlay, reinterpret_cast<const AHUD*>(Class));
         AimFeatures::DoAimbot(Overlay, reinterpret_cast<const AHUD*>(Class));
+        PlayerFeatures::UpdateTeleportTarget(Overlay, reinterpret_cast<const AHUD*>(Class));
         PlayerFeatures::DoTeleportToTarget(Overlay);
+        PlayerFeatures::DoWorldActionHotkeys();
         AimFeatures::DoInfiniteAmmo();
         AimFeatures::ApplyWeaponOptions();
         AimFeatures::RemoveWeaponEffects();
+        AimFeatures::DoTriggerBot();
 
         // Gamemode features
         WorldFeatures::Func_UnlitMode();

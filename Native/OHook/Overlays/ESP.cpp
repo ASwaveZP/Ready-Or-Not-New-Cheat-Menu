@@ -2,6 +2,7 @@
 #include "Configuration.h"
 #include "ActorCache.h"
 #include "Utils.h"
+#include "Hotkey.h"
 #include "SDKExt.h"
 #include "ImGuiExt.h"
 #include "ReadyornotOverlay.h"
@@ -102,7 +103,9 @@ namespace {
 namespace ReadyornotESP {
 
     void DrawGuiFOVCircle() {
-        if (!Configuration::cfg_DrawFOVCircle)
+        const bool drawTpOverlay = Configuration::cfg_EnableTPTarget
+            && (Configuration::cfg_TPTargetKey == 0 || Hotkey::IsPressed(Configuration::cfg_TPTargetKey));
+        if (!Configuration::cfg_DrawFOVCircle && !drawTpOverlay)
             return;
 
         if (IsLevelTransitioning.load()) {
@@ -125,47 +128,72 @@ namespace ReadyornotESP {
         if (!drawList)
             return;
 
-        const float alpha = std::clamp(Configuration::cfg_CircleAlpha, 0.0f, 1.0f);
-        const float radius = Configuration::cfg_FOVRadius;
-        const int segments = 240;
-        const float timeHue = std::fmod(static_cast<float>(ImGui::GetTime()) * 0.16f, 1.0f);
-        auto rainbowColor = [&](float t, float a) {
-            const float hue = std::fmod(timeHue + t, 1.0f);
-            float red = 0.0f, green = 0.0f, blue = 0.0f;
-            ImGui::ColorConvertHSVtoRGB(hue, 0.9f, 1.0f, red, green, blue);
-            return ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, a));
-        };
         const ImVec2 center(FOVCenter.X, FOVCenter.Y);
-        // A soft colored halo under the crisp animated rainbow stroke.
-        for (int i = 0; i < segments; ++i) {
-            const float t0 = static_cast<float>(i) / segments;
-            const float t1 = static_cast<float>(i + 1) / segments;
-            const float a0 = t0 * 6.28318530718f;
-            const float a1 = t1 * 6.28318530718f;
-            const ImVec2 p0(center.x + std::cos(a0) * radius, center.y + std::sin(a0) * radius);
-            const ImVec2 p1(center.x + std::cos(a1) * radius, center.y + std::sin(a1) * radius);
-            drawList->AddLine(p0, p1, rainbowColor((t0 + t1) * 0.5f, alpha * 0.22f), 5.0f);
-            drawList->AddLine(p0, p1, rainbowColor((t0 + t1) * 0.5f, alpha), 2.0f);
-        }
-        const ImU32 CircleColor = rainbowColor(0.0f, alpha);
 
-        const float FOVRadius = Configuration::cfg_FOVRadius;
+        if (Configuration::cfg_DrawFOVCircle) {
+            const float alpha = std::clamp(Configuration::cfg_CircleAlpha, 0.0f, 1.0f);
+            const float radius = Configuration::cfg_FOVRadius;
+            const int segments = 240;
+            const float timeHue = std::fmod(static_cast<float>(ImGui::GetTime()) * 0.16f, 1.0f);
+            auto rainbowColor = [&](float t, float a) {
+                const float hue = std::fmod(timeHue + t, 1.0f);
+                float red = 0.0f, green = 0.0f, blue = 0.0f;
+                ImGui::ColorConvertHSVtoRGB(hue, 0.9f, 1.0f, red, green, blue);
+                return ImGui::ColorConvertFloat4ToU32(ImVec4(red, green, blue, a));
+            };
+            // A soft colored halo under the crisp animated rainbow stroke.
+            for (int i = 0; i < segments; ++i) {
+                const float t0 = static_cast<float>(i) / segments;
+                const float t1 = static_cast<float>(i + 1) / segments;
+                const float a0 = t0 * 6.28318530718f;
+                const float a1 = t1 * 6.28318530718f;
+                const ImVec2 p0(center.x + std::cos(a0) * radius, center.y + std::sin(a0) * radius);
+                const ImVec2 p1(center.x + std::cos(a1) * radius, center.y + std::sin(a1) * radius);
+                drawList->AddLine(p0, p1, rainbowColor((t0 + t1) * 0.5f, alpha * 0.22f), 5.0f);
+                drawList->AddLine(p0, p1, rainbowColor((t0 + t1) * 0.5f, alpha), 2.0f);
+            }
+            const ImU32 CircleColor = rainbowColor(0.0f, alpha);
 
-        if (Overlay->BestTargetActor) {
-            FVector2D TargetScreenPosition;
-            if (PlayerController->ProjectWorldLocationToScreen(Overlay->BestTargetLocation, &TargetScreenPosition, true)) {
-                float DistanceToCenter = CustomMath::Sqrt(
-                    CustomMath::Square(TargetScreenPosition.X - FOVCenter.X) +
-                    CustomMath::Square(TargetScreenPosition.Y - FOVCenter.Y)
-                );
+            const float FOVRadius = Configuration::cfg_FOVRadius;
 
-                if (DistanceToCenter <= FOVRadius) {
-                    drawList->AddLine(
-                        ImVec2(FOVCenter.X, FOVCenter.Y),
-                        ImVec2(TargetScreenPosition.X, TargetScreenPosition.Y),
-                        CircleColor,
-                        Configuration::cfg_ESPThickness
+            if (Overlay->BestTargetActor) {
+                FVector2D TargetScreenPosition;
+                if (PlayerController->ProjectWorldLocationToScreen(Overlay->BestTargetLocation, &TargetScreenPosition, true)) {
+                    float DistanceToCenter = CustomMath::Sqrt(
+                        CustomMath::Square(TargetScreenPosition.X - FOVCenter.X) +
+                        CustomMath::Square(TargetScreenPosition.Y - FOVCenter.Y)
                     );
+
+                    if (DistanceToCenter <= FOVRadius) {
+                        drawList->AddLine(
+                            ImVec2(FOVCenter.X, FOVCenter.Y),
+                            ImVec2(TargetScreenPosition.X, TargetScreenPosition.Y),
+                            CircleColor,
+                            Configuration::cfg_ESPThickness
+                        );
+                    }
+                }
+            }
+        }
+
+        if (drawTpOverlay) {
+            float tpRadius = Configuration::cfg_TPFOVRadius;
+            if (Configuration::cfg_SmallerTPTargeting) tpRadius *= 0.5f;
+            if (tpRadius > 0.0f) {
+                const ImU32 tpRingColor = IM_COL32(60, 220, 255, 130);
+                drawList->AddCircle(center, tpRadius, tpRingColor, 64, 1.25f);
+            }
+            if (Overlay->TeleportTargetActor && IsActorValid(Overlay->TeleportTargetActor)) {
+                FVector2D tpScreen{};
+                if (PlayerController->ProjectWorldLocationToScreen(Overlay->TeleportTargetLocation, &tpScreen, true)) {
+                    const ImVec2 targetPos(tpScreen.X, tpScreen.Y);
+                    const ImU32 tpColor = IM_COL32(60, 240, 200, 230);
+                    drawList->AddLine(center, targetPos, tpColor, 1.5f);
+                    drawList->AddCircle(targetPos, 8.0f, tpColor, 24, 2.0f);
+                    const std::string label = Overlay->TeleportTargetName.empty()
+                        ? "[TP]"
+                        : ("[TP] " + Overlay->TeleportTargetName);
+                    drawList->AddText(ImVec2(targetPos.x + 12.0f, targetPos.y - 7.0f), tpColor, label.c_str());
                 }
             }
         }
@@ -182,6 +210,7 @@ namespace ReadyornotESP {
             !Configuration::cfg_DrawEvidenceESP &&
             !Configuration::cfg_DrawCollectedEvidenceESP &&
             !Configuration::cfg_DrawItemsESP &&
+            !Configuration::cfg_DrawHeldItemsESP &&
             !Configuration::cfg_DrawDoorsESP &&
             !Configuration::cfg_DrawTrapsESP &&
             !Configuration::cfg_ShowObjectives &&
@@ -276,6 +305,9 @@ namespace ReadyornotESP {
                 case EActorCategory::Items:
                     espEnabled = Configuration::cfg_DrawItemsESP;
                     break;
+                case EActorCategory::HeldItems:
+                    espEnabled = Configuration::cfg_DrawHeldItemsESP;
+                    break;
                 case EActorCategory::Doors:
                 case EActorCategory::Securables:
                     continue;
@@ -291,6 +323,23 @@ namespace ReadyornotESP {
 
             if (!espEnabled && !(actorInfo.IsDead && IsCorpseESPEnabled(actorInfo.Category)))
                 continue;
+
+            // Cached discovery is slower than equipment changes: verify the
+            // live hand/evidence state before displaying the marker.
+            if (actorInfo.Category == EActorCategory::HeldItems) {
+                auto* holder = actorInfo.ItemHolder;
+                auto* item = static_cast<ABaseItem*>(actorInfo.Actor);
+                if (!holder || !IsActorValid(holder) || holder->IsDeadOrUnconscious()
+                    || holder->GetEquippedItem() != item || item->Owner != holder
+                    || !item->IsEquipped() || item->IsPlayingHolster()) continue;
+            } else if ((actorInfo.Category == EActorCategory::Items || actorInfo.Category == EActorCategory::Evidence)
+                && actorInfo.Actor->IsA(ABaseWeapon::StaticClass())) {
+                auto* weapon = static_cast<ABaseWeapon*>(actorInfo.Actor);
+                auto* evidence = weapon->EvidenceComponent;
+                if (weapon->IsEquipped() || !evidence || !IsComponentValid(evidence)
+                    || evidence->IsEvidenceCollected()
+                    || (!evidence->CanBeCollected() && !evidence->IsBeingCollected())) continue;
+            }
 
             // Handle different actor types
             bool isCharacter = (actorInfo.Category == EActorCategory::Player ||

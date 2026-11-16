@@ -2,6 +2,7 @@
 #include "ActorCache.h"
 #include "Utils.h"
 #include "Hotkey.h"
+#include "InputOwnership.h"
 #include "console.hpp"
 #include <chrono>
 #include <algorithm>
@@ -15,71 +16,96 @@ using namespace SDK;
 
 namespace AimFeatures {
 
-    bool TryAuthorityWallHit(ABaseMagazineWeapon* weapon, const FHitscanShot& shot, bool localOnly) {
-        if (!Configuration::cfg_BulletPenetration || IsLevelTransitioning.load()
-            || !weapon || !IsActorValid(weapon) || !weapon->bHitScan) return false;
-        auto* player = GetARONCharacter();
-        auto* controller = GetARONPC();
-        if (!player || !IsActorValid(player) || !controller || !IsActorValid(controller)
-            || weapon->Owner != player || !player->HasAuthority() || !weapon->HasAuthority()) return false;
-        // Local prediction must never apply a second authoritative damage event.
-        if (localOnly) return true;
-        FVector direction = shot.Direction;
-        const double length = std::sqrt(direction.X * direction.X + direction.Y * direction.Y + direction.Z * direction.Z);
-        if (!std::isfinite(length) || length < 0.000001) return false;
-        direction = direction * (1.0 / length);
+    void DoTriggerBot() {
+        static APlayerCharacter* firingPlayer = nullptr;
+        static ABaseMagazineWeapon* firingWeapon = nullptr;
+        static auto nextPress = std::chrono::steady_clock::time_point{};
+        if (!Configuration::cfg_TriggerBot && !firingPlayer) return;
 
-        // Query character meshes individually: world geometry never enters this
-        // trace. Trace only a short segment around each target, avoiding a fixed
-        // world-distance cap and precision loss from enormous trace endpoints.
-        const auto suspects = ActorCache::GetInstance().GetCachedActors();
-        AReadyOrNotCharacter* nearest = nullptr;
-        FHitResult nearestHit{};
-        double nearestDistance = DBL_MAX;
-        for (const auto& info : suspects) {
-            if (info.Category != EActorCategory::Suspect) continue;
-            auto* actor = info.Actor;
-            if (!actor || !IsActorValid(actor)) continue;
-            auto* target = static_cast<AReadyOrNotCharacter*>(actor);
-            if (target->IsDeadOrUnconscious() || !target->Mesh) continue;
-            FVector center{}, extent{};
-            float sphereRadius = 0.0f;
-            UKismetSystemLibrary::GetComponentBounds(target->Mesh, &center, &extent, &sphereRadius);
-            const FVector delta = center - shot.Location;
-            const double along = delta.X * direction.X + delta.Y * direction.Y + delta.Z * direction.Z;
-            const double radius = sphereRadius + 10.0;
-            if (!std::isfinite(along) || !std::isfinite(radius) || radius <= 0.0 || along + radius <= 0.0) continue;
-            const FVector closest = shot.Location + direction * along;
-            if (center.GetDistanceTo(closest) > radius) continue;
-            const FVector start = shot.Location + direction * (std::max)(0.0, along - radius);
-            const FVector end = shot.Location + direction * (along + radius);
-            FVector location{}, normal{};
-            FName bone{};
-            FHitResult hit{};
-            if (!target->Mesh->K2_LineTraceComponent(start, end, true, false, false, &location, &normal, &bone, &hit)) continue;
-            const double distance = shot.Location.GetDistanceTo(location);
-            if (distance >= nearestDistance) continue;
-            nearest = target;
-            nearestHit = hit;
-            nearestHit.TraceStart.X = shot.Location.X;
-            nearestHit.TraceStart.Y = shot.Location.Y;
-            nearestHit.TraceStart.Z = shot.Location.Z;
-            nearestHit.TraceEnd.X = end.X;
-            nearestHit.TraceEnd.Y = end.Y;
-            nearestHit.TraceEnd.Z = end.Z;
-            nearestHit.Distance = static_cast<float>(distance);
-            nearestDistance = distance;
+        auto release = [&]() {
+            auto* previous = firingPlayer;
+            firingPlayer = nullptr;
+            firingWeapon = nullptr;
+            if (previous && IsActorValid(previous)) previous->EndPrimaryUse();
+        };
+        // During travel the old world's actors must not receive input calls.
+        if (IsLevelTransitioning.load()) {
+            firingPlayer = nullptr;
+            firingWeapon = nullptr;
+            nextPress = {};
+            return;
         }
-        if (!nearest) return false;
-        const float damage = Configuration::cfg_OneHitKill ? 10000.0f : weapon->CurrentAmmoType.Damage;
-        if (!std::isfinite(damage) || damage <= 0.0f) return false;
-        UGameplayStatics::ApplyPointDamage(nearest, damage, direction, nearestHit, controller, weapon, weapon->DamageType);
-        // Consume the native hitscan even when armour absorbs the damage.
-        return true;
+        if (!Configuration::cfg_TriggerBot || InputOwnership::IsMenuOpen() || !IsGameWindowActive()) {
+            release();
+            return;
+        }
+        // Hand control back to a physical trigger press without releasing it.
+        if (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
+            firingPlayer = nullptr;
+            firingWeapon = nullptr;
+            return;
+        }
+        auto* character = GetARONCharacter();
+        auto* controller = GetARONPC();
+        if (!character || !IsActorValid(character) || !character->IsA(APlayerCharacter::StaticClass())
+            || character->IsDeadOrUnconscious() || !controller || !IsActorValid(controller)) {
+            release();
+            return;
+        }
+        auto* player = static_cast<APlayerCharacter*>(character);
+        auto* equipped = GetCurrentWeapon();
+        if (!equipped || !IsActorValid(equipped) || !equipped->IsA(ABaseMagazineWeapon::StaticClass())) {
+            release();
+            return;
+        }
+        auto* weapon = static_cast<ABaseMagazineWeapon*>(equipped);
+        if (firingPlayer && (firingPlayer != player || firingWeapon != weapon)) release();
+        if (weapon->Owner != player || weapon->bReloading || weapon->IsCurrentlyReloading()
+            || weapon->IsPlayingDraw() || weapon->IsPlayingHolster() || weapon->IsDepleted()) {
+            release();
+            return;
+        }
+        int32 width = 0, height = 0;
+        controller->GetViewportSize(&width, &height);
+        FVector origin{}, direction{};
+        if (width <= 0 || height <= 0 || !controller->DeprojectScreenPositionToWorld(
+            width * 0.5f, height * 0.5f, &origin, &direction)) {
+            release();
+            return;
+        }
+        TArray<AActor*> ignored;
+        ignored.Add(player);
+        ignored.Add(weapon);
+        FHitResult hit{};
+        const bool blocked = UKismetSystemLibrary::LineTraceSingle(player, origin, origin + direction * 1000000.0,
+            ETraceTypeQuery::TraceTypeQuery1, true, ignored, EDrawDebugTrace::None, &hit, true, {}, {}, 0.0f);
+        auto* target = blocked && hit.bBlockingHit ? hit.HitObjectHandle.Actor.Get() : nullptr;
+        if (!target || !IsActorValid(target) || !target->IsA(ASuspectCharacter::StaticClass())) {
+            release();
+            return;
+        }
+        auto* suspect = static_cast<ASuspectCharacter*>(target);
+        if (suspect->IsDeadOrUnconscious() || suspect->IsIncapacitated() || suspect->IsArrestedOrSurrendered()) {
+            release();
+            return;
+        }
+        // Full auto uses the game's held-trigger behavior. Semi/burst modes
+        // release on the next frame and re-press no faster than the fire rate.
+        if (firingPlayer) {
+            if (weapon->CurrentFireMode != EFireMode::FM_Auto) release();
+            return;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (now < nextPress) return;
+        const double interval = std::isfinite(weapon->FireRate) ? (std::max)(0.01, static_cast<double>(weapon->FireRate)) : 0.1;
+        nextPress = now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(interval));
+        firingPlayer = player;
+        firingWeapon = weapon;
+        player->PrimaryUse();
     }
 
     namespace {
-        FVector GetAimBoneLocation(USkeletalMeshComponent* mesh, int selection) {
+        FName GetAimBoneName(USkeletalMeshComponent* mesh, int selection) {
             if (!mesh || !mesh->SkeletalMesh) return {};
             if (selection < 0 || selection > 4) selection = 0;
             struct AimBones { FName names[5]{}; bool resolved[5]{}; bool valid[5]{}; };
@@ -87,7 +113,7 @@ namespace AimFeatures {
             if (boneCache.size() >= 256) boneCache.clear();
             auto& cached = boneCache[mesh->SkeletalMesh];
             if (cached.resolved[selection])
-                return cached.valid[selection] ? mesh->GetSocketLocation(cached.names[selection]) : FVector{};
+                return cached.valid[selection] ? cached.names[selection] : FName{};
             cached.resolved[selection] = true;
             std::vector<std::string> candidates;
             switch (selection) {
@@ -109,18 +135,174 @@ namespace AimFeatures {
                     if (normalized != candidate) continue;
                     cached.names[selection] = boneName;
                     cached.valid[selection] = true;
-                    const FVector location = mesh->GetSocketLocation(boneName);
-                    if (!location.IsZero()) return location;
+                    return boneName;
                 }
             }
             return {};
         }
+
+        FVector GetAimBoneLocation(USkeletalMeshComponent* mesh, int selection) {
+            const FName boneName = GetAimBoneName(mesh, selection);
+            if (boneName == FName{}) return {};
+            return mesh->GetSocketLocation(boneName);
+        }
+
+        bool IntersectRaySphere(const FVector& origin, const FVector& dir, const FVector& center, double radius, double& outT) {
+            const FVector oc = center - origin;
+            const double tCa = oc.Dot(dir);
+            const double d2 = oc.Dot(oc) - tCa * tCa;
+            const double r2 = radius * radius;
+            if (d2 > r2) return false;
+            const double tHc = std::sqrt((std::max)(0.0, r2 - d2));
+            double t = tCa - tHc;
+            if (t < 0.0) t = tCa + tHc;
+            if (t < 0.0 || !std::isfinite(t)) return false;
+            outT = t;
+            return true;
+        }
+
+        bool TryAuthorityRayHit(ABaseMagazineWeapon* weapon, const FVector& origin, const FVector& rawDirection) {
+            if (!Configuration::cfg_BulletPenetration || IsLevelTransitioning.load()
+                || !weapon || !IsActorValid(weapon)) return false;
+            auto* player = GetARONCharacter();
+            auto* controller = GetARONPC();
+            if (!player || !IsActorValid(player) || !controller || !IsActorValid(controller)
+                || weapon->Owner != player || !player->HasAuthority() || !weapon->HasAuthority()) return false;
+
+            const double length = std::sqrt(rawDirection.X * rawDirection.X + rawDirection.Y * rawDirection.Y + rawDirection.Z * rawDirection.Z);
+            if (!std::isfinite(length) || length < 0.000001) return false;
+            const FVector direction = rawDirection * (1.0 / length);
+
+            // Query character meshes individually and fall back to bone/capsule
+            // intersection when occluded/distant skeletal meshes skip physics traces.
+            const auto suspects = ActorCache::GetInstance().GetCachedActors();
+            AReadyOrNotCharacter* nearest = nullptr;
+            FHitResult nearestHit{};
+            double nearestDistance = DBL_MAX;
+
+            static constexpr struct { int slot; double radius; } kBoneSpheres[] = {
+                { 0, 14.0 }, // head
+                { 1, 14.0 }, // neck
+                { 2, 24.0 }, // upper chest
+                { 3, 22.0 }, // lower spine
+            };
+
+            for (const auto& info : suspects) {
+                if (info.Category != EActorCategory::Suspect) continue;
+                auto* actor = info.Actor;
+                if (!actor || !IsActorValid(actor)) continue;
+                auto* target = static_cast<AReadyOrNotCharacter*>(actor);
+                if (target->IsDeadOrUnconscious() || !target->Mesh) continue;
+
+                FVector center{}, extent{};
+                float sphereRadius = 0.0f;
+                UKismetSystemLibrary::GetComponentBounds(target->Mesh, &center, &extent, &sphereRadius);
+                if (sphereRadius <= 0.0f) center = target->K2_GetActorLocation();
+
+                const FVector delta = center - origin;
+                const double along = delta.X * direction.X + delta.Y * direction.Y + delta.Z * direction.Z;
+                const double radius = (std::max)(static_cast<double>(sphereRadius), 95.0) + 15.0;
+                if (!std::isfinite(along) || along + radius <= 0.0) continue;
+                const FVector closest = origin + direction * along;
+                if (center.GetDistanceTo(closest) > radius) continue;
+
+                const FVector start = origin + direction * (std::max)(0.0, along - radius);
+                const FVector end = origin + direction * (along + radius);
+                FVector location{}, normal{};
+                FName bone{};
+                FHitResult hit{};
+                double distance = DBL_MAX;
+
+                // Use bTraceComplex=false so UE5 traces the SkeletalMesh PhysicsAsset.
+                if (target->Mesh->K2_LineTraceComponent(start, end, false, false, false, &location, &normal, &bone, &hit)) {
+                    distance = origin.GetDistanceTo(location);
+                } else {
+                    // Fallback for occluded or distant suspects whose mesh physics are culled.
+                    double bestT = DBL_MAX;
+                    FName bestBone{};
+                    for (const auto& entry : kBoneSpheres) {
+                        const FName boneName = GetAimBoneName(target->Mesh, entry.slot);
+                        if (boneName == FName{}) continue;
+                        const FVector bonePos = target->Mesh->GetSocketLocation(boneName);
+                        if (bonePos.IsZero()) continue;
+                        double t = 0.0;
+                        if (IntersectRaySphere(origin, direction, bonePos, entry.radius, t) && t < bestT) {
+                            bestT = t;
+                            bestBone = boneName;
+                        }
+                    }
+                    if (bestT >= DBL_MAX) {
+                        double t = 0.0;
+                        if (!IntersectRaySphere(origin, direction, center, 36.0, t)) continue;
+                        bestT = t;
+                    }
+                    distance = bestT;
+                    const FVector hitPos = origin + direction * bestT;
+                    hit.bBlockingHit = true;
+                    hit.Location.X = hitPos.X;
+                    hit.Location.Y = hitPos.Y;
+                    hit.Location.Z = hitPos.Z;
+                    hit.ImpactPoint.X = hitPos.X;
+                    hit.ImpactPoint.Y = hitPos.Y;
+                    hit.ImpactPoint.Z = hitPos.Z;
+                    hit.Normal.X = -direction.X;
+                    hit.Normal.Y = -direction.Y;
+                    hit.Normal.Z = -direction.Z;
+                    hit.ImpactNormal.X = -direction.X;
+                    hit.ImpactNormal.Y = -direction.Y;
+                    hit.ImpactNormal.Z = -direction.Z;
+                    hit.BoneName = bestBone;
+                }
+
+                if (distance >= nearestDistance) continue;
+                nearest = target;
+                nearestHit = hit;
+                nearestHit.TraceStart.X = origin.X;
+                nearestHit.TraceStart.Y = origin.Y;
+                nearestHit.TraceStart.Z = origin.Z;
+                nearestHit.TraceEnd.X = end.X;
+                nearestHit.TraceEnd.Y = end.Y;
+                nearestHit.TraceEnd.Z = end.Z;
+                nearestHit.Distance = static_cast<float>(distance);
+                nearestDistance = distance;
+            }
+            if (!nearest) return false;
+
+            float damage = Configuration::cfg_OneHitKill ? 10000.0f : weapon->CurrentAmmoType.Damage;
+            if (!std::isfinite(damage) || damage <= 0.0f) {
+                damage = weapon->Damage > 0.0f ? weapon->Damage : weapon->DefaultDamage;
+            }
+            if (!std::isfinite(damage) || damage <= 0.0f) damage = 100.0f;
+
+            TSubclassOf<UDamageType> damageType = weapon->DamageType;
+            if (!damageType) damageType = weapon->CurrentAmmoType.DamageTypeOverride;
+            if (!damageType) damageType = weapon->DefaultDamageType;
+            if (!damageType) damageType = UDamageType::StaticClass();
+
+            UGameplayStatics::ApplyPointDamage(nearest, damage, direction, nearestHit, controller, weapon, damageType);
+            return true;
+        }
+    }
+
+    bool TryAuthorityWallHit(ABaseMagazineWeapon* weapon, const FHitscanShot& shot, bool localOnly) {
+        if (!weapon || !IsActorValid(weapon) || !weapon->bHitScan) return false;
+        // Let local prediction FX run without applying duplicate damage or blocking normal shots.
+        if (localOnly) return false;
+        return TryAuthorityRayHit(weapon, shot.Location, shot.Direction);
+    }
+
+    void TryAuthorityProjectileWallHit(ABaseMagazineWeapon* weapon, const FVector& origin, const FRotator& rotation) {
+        if (!weapon || !IsActorValid(weapon) || weapon->bHitScan) return;
+        const FVector direction = UKismetMathLibrary::GetForwardVector(rotation);
+        TryAuthorityRayHit(weapon, origin, direction);
     }
 
     void DoTargeting(ReadyornotOverlay* Overlay, const SDK::AHUD* HUD)
     {
-        if ((!Configuration::cfg_EnableAimbot && !Configuration::cfg_TeleportToTarget && !Configuration::cfg_EnableTPTarget) || !Overlay || !HUD || !HUD->Canvas)
+        if (!Configuration::cfg_EnableAimbot || !Overlay || !HUD || !HUD->Canvas) {
+            if (Overlay) Overlay->BestTargetActor = nullptr;
             return;
+        }
 
         if (IsLevelTransitioning.load()) {
             return;
@@ -185,10 +367,7 @@ namespace AimFeatures {
                 CustomMath::Square(TargetScreenPosition.X - FOVCenter.X) +
                 CustomMath::Square(TargetScreenPosition.Y - FOVCenter.Y)
             );
-            const bool teleportTargeting = Configuration::cfg_TeleportToTarget || Configuration::cfg_EnableTPTarget;
-            float targetRadius = teleportTargeting ? Configuration::cfg_TPFOVRadius : Configuration::cfg_FOVRadius;
-            if (teleportTargeting && Configuration::cfg_SmallerTPTargeting) targetRadius *= 0.5f;
-            if (ScreenDistance > targetRadius)
+            if (ScreenDistance > Configuration::cfg_FOVRadius)
                 continue;
 
             bool shouldTarget = false;
@@ -200,7 +379,7 @@ namespace AimFeatures {
                     maxDistance = Configuration::cfg_MaxPlayerESPDistance / 100.0f;
                     break;
                 case EActorCategory::Suspect:
-                    shouldTarget = Configuration::cfg_DrawSuspectESP || teleportTargeting;
+                    shouldTarget = Configuration::cfg_DrawSuspectESP || Configuration::cfg_EnableAimbot;
                     maxDistance = Configuration::cfg_MaxAIESPDistance / 100.0f;
                     break;
                 case EActorCategory::SERT_Red:

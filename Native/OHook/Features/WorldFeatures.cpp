@@ -6,6 +6,7 @@
 #include "ImGuiExt.h"
 #include "ActorCache.h"
 #include <chrono>
+#include <unordered_set>
 #include <Windows.h>
 
 using namespace SDK;
@@ -81,5 +82,137 @@ namespace WorldFeatures {
         if (currentViewMode != desiredViewMode) {
             *ViewModePtr = desiredViewMode;
         }
+    }
+
+    namespace {
+        void UnlockDoorActor(Adoor* door) {
+            if (!door || !IsActorValid(door)) return;
+            door->bAlwaysLocked = false;
+            door->bLocked = false;
+            door->UnlockDoor(true);
+            door->SetLocked(false);
+            door->Multicast_SetLocked(false);
+        }
+
+        bool IsFriendlyOrPlayer(AReadyOrNotCharacter* character, AActor* localPlayer) {
+            if (!character || character == localPlayer) return true;
+            if (character->IsA(ABasePlayer_C::StaticClass()) || character->IsA(ASWATCharacter::StaticClass())) return true;
+            auto* controller = character->GetController();
+            if (controller && controller->IsA(AReadyOrNotPlayerController::StaticClass())) return true;
+            const auto team = character->GetTeam();
+            return team == ETeamType::TT_SERT_RED || team == ETeamType::TT_SERT_BLUE || team == ETeamType::TT_SQUAD;
+        }
+    }
+
+    bool UnlockAllDoors() {
+        UWorld* world = GetWorld();
+        if (!world) return false;
+
+        std::unordered_set<Adoor*> doors;
+        TArray<AActor*> foundDoors;
+        UGameplayStatics::GetAllActorsOfClass(reinterpret_cast<UObject*>(world), Adoor::StaticClass(), &foundDoors);
+        for (AActor* actor : foundDoors) {
+            if (actor && IsActorValid(actor)) doors.insert(static_cast<Adoor*>(actor));
+        }
+
+        if (auto* gameState = UReadyOrNotStatics::GetReadyOrNotGameState(); gameState && IsActorValid(gameState)) {
+            for (Adoor* door : gameState->AllDoors) {
+                if (door && IsActorValid(door)) doors.insert(door);
+            }
+        }
+
+        Adoor::SetAllElectronicLocks(reinterpret_cast<UObject*>(world), false);
+        for (Adoor* door : doors) {
+            UnlockDoorActor(door);
+            UnlockDoorActor(door->DriveSubDoor);
+        }
+        return true;
+    }
+
+    bool KillCharactersByTeam(bool killSuspects, bool killCivilians) {
+        UWorld* world = GetWorld();
+        auto* controller = GetARONPCForESP();
+        if (!world || !controller || !IsActorValid(controller)) return false;
+
+        AActor* localPlayer = controller->K2_GetPawn();
+        TArray<AActor*> foundCharacters;
+        UGameplayStatics::GetAllActorsOfClass(reinterpret_cast<UObject*>(world), AReadyOrNotCharacter::StaticClass(), &foundCharacters);
+
+        for (AActor* actor : foundCharacters) {
+            auto* character = static_cast<AReadyOrNotCharacter*>(actor);
+            if (!character || !IsActorValid(character) || character == localPlayer) continue;
+            if (character->GetHealthStatus() == EPlayerHealthStatus::HS_Dead) continue;
+
+            const auto team = character->GetTeam();
+            const bool isSuspect = character->IsA(ASuspectCharacter::StaticClass()) || team == ETeamType::TT_SUSPECT;
+            const bool isCivilian = character->IsA(ACivilianCharacter::StaticClass()) || team == ETeamType::TT_CIVILIAN;
+            if (!((killSuspects && isSuspect) || (killCivilians && isCivilian))) continue;
+
+            character->bCanBeDamaged = true;
+            character->Server_Kill();
+            character->Kill();
+            if (character->GetHealthStatus() != EPlayerHealthStatus::HS_Dead) {
+                UGameplayStatics::ApplyDamage(character, 100000.0f, controller, localPlayer, UDamageType::StaticClass());
+            }
+        }
+        return true;
+    }
+
+    bool CollectAllEvidence() {
+        UWorld* world = GetWorld();
+        auto* controller = GetARONPCForESP();
+        auto* player = controller ? controller->K2_GetPawn() : nullptr;
+        if (!world || !player || !IsActorValid(player)) return false;
+
+        auto* ronPlayer = static_cast<AReadyOrNotCharacter*>(player);
+
+        TArray<AActor*> evidenceActors;
+        UGameplayStatics::GetAllActorsOfClass(reinterpret_cast<UObject*>(world), AEvidenceActor::StaticClass(), &evidenceActors);
+        for (AActor* actor : evidenceActors) {
+            auto* evidence = static_cast<AEvidenceActor*>(actor);
+            if (!evidence || !IsActorValid(evidence) || !evidence->EvidenceComponent || !IsComponentValid(evidence->EvidenceComponent)) continue;
+            if (!evidence->EvidenceComponent->IsEvidenceCollected() && evidence->EvidenceComponent->CanBeCollected()) {
+                ronPlayer->PickupEvidence(evidence);
+            }
+        }
+
+        TArray<AActor*> weapons;
+        UGameplayStatics::GetAllActorsOfClass(reinterpret_cast<UObject*>(world), ABaseWeapon::StaticClass(), &weapons);
+        for (AActor* actor : weapons) {
+            auto* weapon = static_cast<ABaseWeapon*>(actor);
+            if (!weapon || !IsActorValid(weapon) || weapon->IsEquipped()) continue;
+            auto* evidenceComp = weapon->EvidenceComponent;
+            if (!evidenceComp || !IsComponentValid(evidenceComp)) continue;
+            if (!evidenceComp->IsEvidenceCollected() && evidenceComp->CanBeCollected()) {
+                ronPlayer->PickupEvidence(weapon);
+            }
+        }
+
+        ronPlayer->CollectPendingEvidence();
+        return true;
+    }
+
+    bool IncapacitateAllCharacters() {
+        UWorld* world = GetWorld();
+        auto* controller = GetARONPCForESP();
+        if (!world || !controller || !IsActorValid(controller)) return false;
+
+        AActor* localPlayer = controller->K2_GetPawn();
+        TArray<AActor*> foundCharacters;
+        UGameplayStatics::GetAllActorsOfClass(reinterpret_cast<UObject*>(world), AReadyOrNotCharacter::StaticClass(), &foundCharacters);
+
+        for (AActor* actor : foundCharacters) {
+            auto* character = static_cast<AReadyOrNotCharacter*>(actor);
+            if (!character || !IsActorValid(character) || IsFriendlyOrPlayer(character, localPlayer)) continue;
+            if (character->IsDeadOrUnconscious() || character->IsIncapacitated()) continue;
+
+            character->Server_Incapacitate();
+            character->Incapacitate();
+            if (character->CharacterHealth && IsComponentValid(character->CharacterHealth)
+                && character->GetHealthStatus() == EPlayerHealthStatus::HS_Healthy) {
+                character->CharacterHealth->SetHealthStatus(EPlayerHealthStatus::HS_Incapacitated);
+            }
+        }
+        return true;
     }
 }

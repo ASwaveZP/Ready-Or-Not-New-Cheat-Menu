@@ -1,6 +1,10 @@
 <a id="top"></a>
 # RON Cheat Menu
 
+> **支持 SmartCheatLoader**：Ready or Not 已接入 SmartCheatLoader，可直接通过 SmartCheatLoader 拉取并使用本项目。
+>
+> **SmartCheatLoader support:** Ready or Not is supported by SmartCheatLoader. You can fetch and use this project directly through SmartCheatLoader.
+
 **Ready or Not · Windows x64 · C++ / WPF**
 
 [简体中文](#zh-cn) | [English](#en)

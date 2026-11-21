@@ -50,7 +50,7 @@
 在 **Visual Studio x64 开发者命令提示符** 中执行：
 
 ```bat
-git clone https://github.com/2786256218/Ready-Or-Not-New-Cheat-Menu.git
+git clone https://github.com/ASwaveZP/Ready-Or-Not-New-Cheat-Menu.git
 cd Ready-Or-Not-New-Cheat-Menu
 cmake -S Native -B Native/build-vs -G "Visual Studio 18 2026" -A x64
 cmake --build Native/build-vs --config Release --target OHook -- /m
@@ -160,7 +160,7 @@ The repository includes `Native/ReadyornotSDK/`, local dependencies and `Model.g
 Run in a **Visual Studio x64 Developer Command Prompt**:
 
 ```bat
-git clone https://github.com/2786256218/Ready-Or-Not-New-Cheat-Menu.git
+git clone https://github.com/ASwaveZP/Ready-Or-Not-New-Cheat-Menu.git
 cd Ready-Or-Not-New-Cheat-Menu
 cmake -S Native -B Native/build-vs -G "Visual Studio 18 2026" -A x64
 cmake --build Native/build-vs --config Release --target OHook -- /m
